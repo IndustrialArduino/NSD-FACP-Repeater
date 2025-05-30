@@ -45,6 +45,8 @@ bool FEA_Status = false;
 bool FTA_Status = false;
 bool MSA_Status = false ;
 
+bool inputStatus[3] = {false, false, false}; // FEA, FTA, MSA
+
 //Debouncing and states
 unsigned long lastDebounceTime[3] = {0, 0, 0};
 bool lastStableState[3] = {HIGH, LOW, LOW};
@@ -81,121 +83,78 @@ void setup() {
 }
 
 void loop() {
+  if (processing) return;
+  processing = true;
 
+  readInputsAndCheckAlarms();
+  maintainMQTTConnection();
+
+  processing = false;
+  delay(50); 
+
+}
+
+void readInputsAndCheckAlarms() {
   unsigned long now = millis();
-
-  // Read raw input states
-  currentState[0] = digitalRead(D1); // Fire
-  currentState[1] = digitalRead(D2); // Fault
-  currentState[2] = digitalRead(D3); // Mains
+  currentState[0] = digitalRead(D1);
+  currentState[1] = digitalRead(D2);
+  currentState[2] = digitalRead(D3);
 
   for (int i = 0; i < 3; i++) {
     if (currentState[i] != lastStableState[i]) {
-      if ((now - lastDebounceTime[i]) > DEBOUNCE_DELAY && !processing) {
+      if ((now - lastDebounceTime[i]) > DEBOUNCE_DELAY) {
         lastDebounceTime[i] = now;
-        processing = true;
-
-        String topic;
-        String payload;
-
-        switch (i) {
-          case 0: // FIRE
-            FEA_Status = (currentState[i] == LOW);  // Active when LOW
-            topic = "dtck-pub/nsd-facp-repeater/7d165773-3625-4c82-9412-5df17217c656/FIRE_ALARM";
-            payload = String(FEA_Status);
-            Serial.println(FEA_Status ? "[ALARM] FIRE Active" : "[NORMAL] FIRE Normal");
-            break;
-          case 1: // FAULT
-            FTA_Status = (currentState[i] == HIGH); // Active when HIGH
-            topic = "dtck-pub/nsd-facp-repeater/7d165773-3625-4c82-9412-5df17217c656/FAULT_ALARM";
-            payload = String(FTA_Status);
-            Serial.println(FTA_Status ? "[ALARM] FAULT Active" : "[NORMAL] FAULT Normal");
-            break;
-          case 2: // MAINS
-            MSA_Status = (currentState[i] == HIGH); // Active when HIGH
-            topic = "dtck-pub/nsd-facp-repeater/7d165773-3625-4c82-9412-5df17217c656/MAINS_FAIL_ALARM";
-            payload = String(MSA_Status);
-            Serial.println(MSA_Status ? "[ALARM] MAINS Fail" : "[NORMAL] MAINS OK");
-            break;
-        }
-
-        // Send MQTT publish command
-        String command = "AT+QMTPUBEX=0,1,1,0,\"" + topic + "\"," + String(payload.length());
-        String publishResponse = gsm_send_serial(command, 1000);
-        publishResponse += gsm_send_serial(payload + "\x1A", 1000);
-
-                // Check if publish was successful
-        if (!(publishResponse.indexOf("OK") != -1 && publishResponse.indexOf("+QMTPUBEX: 0,1,0") != -1)) {
-          Serial.println("[ERROR] MQTT publish failed. Starting step-by-step recovery...");
-
-          // Step 1: Check network connection
-          if (!isNetworkConnected()) {
-            Serial.println("[RECOVERY] Network not connected. Resetting network...");
-            gsm_send_serial("AT+CFUN=1", 2000);
-            delay(1000);
-            gsm_send_serial("AT+CPIN?", 1000);
-            gsm_send_serial("AT+CREG?", 1000);
-            if (!isNetworkConnected()) {
-              Serial.println("[ERROR] Network still unavailable. Aborting publish.");
-              processing = false;
-              return;
-            }
-          }
-
-          // Step 2: Check GPRS connection
-          if (!isGPRSConnected()) {
-            Serial.println("[RECOVERY] GPRS not connected. Reconnecting GPRS...");
-            connectToGPRS();
-            delay(1000);
-            if (!isGPRSConnected()) {
-              Serial.println("[ERROR] GPRS still unavailable. Aborting publish.");
-              processing = false;
-              return;
-            }
-          }
-
-          // Step 3: Check MQTT connection
-          String status = gsm_send_serial("AT+QMTCONN?", 1000);
-          if (status.indexOf("+QMTCONN: 0,0") == -1) {
-            Serial.println("[RECOVERY] MQTT not connected. Reconnecting MQTT...");
-            connectToMQTT();
-            delay(1000);
-            status = gsm_send_serial("AT+QMTCONN?", 1000);
-            if (status.indexOf("+QMTCONN: 0,0") == -1) {
-              Serial.println("[ERROR] MQTT still disconnected. Aborting publish.");
-              processing = false;
-              return;
-            }
-          }
-
-          // Retry MQTT publish after recovery
-          Serial.println("[INFO] Retrying MQTT publish...");
-          publishResponse = gsm_send_serial(command, 1000);
-          publishResponse += gsm_send_serial(payload + "\x1A", 1000);
-          if (publishResponse.indexOf("OK") != -1 && publishResponse.indexOf("+QMTPUBEX: 0,0,0") != -1) {
-            Serial.println("[SUCCESS] MQTT publish successful after recovery.");
-          } else {
-            Serial.println("[FAILURE] MQTT publish still failed after recovery.");
-          }
-        }
-
-        // Update state
         lastStableState[i] = currentState[i];
-        processing = false;
+
+        inputStatus[i] = interpretAlarmStatus(i, currentState[i]);
+        handleAlarmStateChange(i, inputStatus[i]);
       }
     }
   }
+}
 
-  // Check MQTT connection
+bool interpretAlarmStatus(int idx, bool state) {
+  if (idx == 0) return state == LOW;  // Fire
+  else return state == HIGH;          // Fault / Mains
+}
+
+void handleAlarmStateChange(int idx, bool status) {
+  String topic;
+  String payload = String(status);
+
+  switch (idx) {
+    case 0:
+      topic = "dtck-pub/nsd-facp-repeater/7d165773-3625-4c82-9412-5df17217c656/FIRE_ALARM";
+      Serial.println(status ? "[ALARM] FIRE Active" : "[NORMAL] FIRE Normal");
+      break;
+    case 1:
+      topic = "dtck-pub/nsd-facp-repeater/7d165773-3625-4c82-9412-5df17217c656/FAULT_ALARM";
+      Serial.println(status ? "[ALARM] FAULT Active" : "[NORMAL] FAULT Normal");
+      break;
+    case 2:
+      topic = "dtck-pub/nsd-facp-repeater/7d165773-3625-4c82-9412-5df17217c656/MAINS_FAIL_ALARM";
+      Serial.println(status ? "[ALARM] MAINS Fail" : "[NORMAL] MAINS OK");
+      break;
+  }
+
+  publishToMQTT(topic, payload);
+
+}
+
+void publishToMQTT(String topic, String payload) {
+  String command = "AT+QMTPUBEX=0,1,1,1,\"" + topic + "\"," + String(payload.length());
+  gsm_send_serial(command, 1000);
+  gsm_send_serial(payload + "\x1A", 1000);
+}
+
+void maintainMQTTConnection() {
   String status = gsm_send_serial("AT+QMTCONN?", 1000);
-  if (status.indexOf("+QMTCONN: 0,0") == -1) {
+  if (status.indexOf("+QMTCONN: 0,3") == -1) {
     Serial.println("[WARNING] MQTT Disconnected. Reconnecting...");
     connectToMQTT();
   }
-
-  delay(50); // small delay to reduce CPU churn
-
 }
+
 
 void Init(void) {                        // Connecting with the network and GPRS
   delay(5000);
@@ -206,7 +165,7 @@ void Init(void) {                        // Connecting with the network and GPRS
   gsm_send_serial("AT+COPS?", 1000);
   gsm_send_serial("AT+CGATT?", 1000);
   gsm_send_serial("AT+CPSI?", 500);
-  gsm_send_serial("AT+CGDCONT=1,\"IP\",\"hologram\"", 1000);
+  gsm_send_serial("AT+CGDCONT=1,\"IP\",\"dialogbb\"", 1000);
   gsm_send_serial("AT+CGACT=1,1", 1000);
   gsm_send_serial("AT+CGATT?", 1000);
   gsm_send_serial("AT+CGPADDR=1", 500);
@@ -214,7 +173,7 @@ void Init(void) {                        // Connecting with the network and GPRS
 
 void connectToGPRS(void) {
   gsm_send_serial("AT+CGATT=1", 1000);
-  gsm_send_serial("AT+CGDCONT=1,\"IP\",\"hologram\"", 1000);
+  gsm_send_serial("AT+CGDCONT=1,\"IP\",\"dialogbb\"", 1000);
   gsm_send_serial("AT+CGACT=1,1", 1000);
   gsm_send_serial("AT+CGPADDR=1", 500);
 }
@@ -232,6 +191,8 @@ void connectToMQTT(void) {
   gsm_send_serial("AT+QSSLCFG=\"cacert\",2,\"RAM:datacake_ca.pem\"", 1000);
   gsm_send_serial("AT+QMTOPEN=0,\"mqtt.datacake.co\",8883", 1000);
   delay(2000); // Wait for the connection to establish
+  gsm_send_serial("AT+QMTDISC=0",1000);
+  delay(1000);
   String mqtt_conn = "AT+QMTCONN=0,\"Transmitter_panel\",\"" + username + "\",\"" + password + "\"";
   gsm_send_serial(mqtt_conn, 1000);
   delay(2000); // Wait for the connection to establish
