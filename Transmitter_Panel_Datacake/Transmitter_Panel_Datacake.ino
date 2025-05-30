@@ -7,7 +7,6 @@
 
 String gsm_send_serial(String command, int delay);
 
-//#define TINY_GSM_MODEM_SIM7600
 #define SerialMon Serial
 #define SerialAT Serial1
 #define GSM_PIN ""
@@ -124,15 +123,15 @@ void handleAlarmStateChange(int idx, bool status) {
 
   switch (idx) {
     case 0:
-      topic = "dtck-pub/nsd-facp-repeater/7d165773-3625-4c82-9412-5df17217c656/FIRE_ALARM";
+      topic = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/FIRE_ALARM";
       Serial.println(status ? "[ALARM] FIRE Active" : "[NORMAL] FIRE Normal");
       break;
     case 1:
-      topic = "dtck-pub/nsd-facp-repeater/7d165773-3625-4c82-9412-5df17217c656/FAULT_ALARM";
+      topic = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/FAULT_ALARM";
       Serial.println(status ? "[ALARM] FAULT Active" : "[NORMAL] FAULT Normal");
       break;
     case 2:
-      topic = "dtck-pub/nsd-facp-repeater/7d165773-3625-4c82-9412-5df17217c656/MAINS_FAIL_ALARM";
+      topic = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/MAINS_FAIL_ALARM";
       Serial.println(status ? "[ALARM] MAINS Fail" : "[NORMAL] MAINS OK");
       break;
   }

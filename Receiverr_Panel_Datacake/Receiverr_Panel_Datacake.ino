@@ -7,7 +7,6 @@
 
 String gsm_send_serial(String command, int delay);
 
-//#define TINY_GSM_MODEM_SIM7600
 #define SerialMon Serial
 #define SerialAT Serial1
 #define GSM_PIN ""
@@ -53,6 +52,12 @@ bool lastSilenceButtonState = HIGH;
 unsigned long lastSilenceDebounceTime = 0;
 const unsigned long silenceDebounceDelay = 50;
 
+bool faultActive = false;
+unsigned long lastBuzzerToggleTime = 0;
+bool buzzerState = false;
+const unsigned long buzzerOnTime = 1000;   // 1 second ON
+const unsigned long buzzerOffTime = 5000;  // 5 seconds OFF
+
 
 void mqttCallback(char* topic, String payload, unsigned int len) {
   SerialMon.print("Message arrived [");
@@ -71,8 +76,6 @@ void mqttCallback(char* topic, String payload, unsigned int len) {
     SerialMon.println("Unknown topic type.");
   }
 }
-
-
 
 void setup() {
   // Set console baud rate
@@ -106,7 +109,8 @@ void loop() {
   handleIncomingMessages();
   readInputsAndCheckAlarms();
   checkSilenceButton(); 
-  maintainMQTTConnection();
+  handleBuzzerPulse();
+  //maintainMQTTConnection();
   
 }
 
@@ -134,7 +138,7 @@ void handleAlarmStateChange(bool status) {
   String topic;
   String payload = String(status);
 
-      topic = "dtck-pub/nsd-facp-repeater/7d165773-3625-4c82-9412-5df17217c656/RECEIVE_MAINS_FAIL_ALARM";
+      topic = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/RECEIVE_MAINS_FAIL_ALARM";
       Serial.println(status ? "[ALARM] MAINS Fail" : "[NORMAL] MAINS OK");
   
 
@@ -162,7 +166,6 @@ void checkSilenceButton() {
 
       Serial.println("[ACTION] Silence button pressed. Turning OFF local bell.");
       digitalWrite(R1, LOW); // Turn off Relay Output-2 (Local Bell)
-
     }
 
     if (reading == HIGH) {
@@ -170,6 +173,7 @@ void checkSilenceButton() {
     }
   }
 }
+
 
 
 void maintainMQTTConnection() {
@@ -277,11 +281,28 @@ void handleFaultAlarm(String payload) {
   if(state){
     SerialMon.println("Fault reported at Cooling Plant");
     digitalWrite(R2, HIGH);
-    digitalWrite(R3, HIGH);
+    faultActive = true;         // Enable pulsing
+    lastBuzzerToggleTime = millis();  // Reset buzzer timer
+    buzzerState = false;
+    digitalWrite(R3, LOW);      // Start from buzzer OFF
   }else{
     SerialMon.println("Fault cleared at Cooling Plant");
     digitalWrite(R2, LOW);
-    digitalWrite(R3, LOW);   
+    digitalWrite(R3, LOW); 
+    faultActive = false;  
+  }
+}
+
+void handleBuzzerPulse() {
+  if (!faultActive) return;
+
+  unsigned long now = millis();
+  unsigned long interval = buzzerState ? buzzerOnTime : buzzerOffTime;
+
+  if (now - lastBuzzerToggleTime >= interval) {
+    buzzerState = !buzzerState;
+    digitalWrite(R3, buzzerState ? HIGH : LOW);
+    lastBuzzerToggleTime = now;
   }
 }
 
@@ -328,8 +349,8 @@ void connectToMQTT(void) {
   delay(2000); // Wait for the connection to establish
 
   // Subscribe to both topics
-  String topic1 = "dtck-pub/nsd-facp-repeater/7d165773-3625-4c82-9412-5df17217c656/FIRE_ALARM";
-  String topic2 = "dtck-pub/nsd-facp-repeater/7d165773-3625-4c82-9412-5df17217c656/FAULT_ALARM";
+  String topic1 = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/FIRE_ALARM";
+  String topic2 = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/FAULT_ALARM";
   
   String sub1 = "AT+QMTSUB=0,0,\"" + topic1 + "\",0";
   gsm_send_serial(sub1, 1000);
