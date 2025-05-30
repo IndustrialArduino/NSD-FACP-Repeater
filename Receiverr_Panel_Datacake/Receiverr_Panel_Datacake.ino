@@ -1,0 +1,287 @@
+#include <Arduino.h>
+#include <Wire.h>
+#include <WiFi.h>  // Include the WiFi library for MAC address
+#include <ArduinoJson.h>
+#include "Secret.h" // Include the file to get the username and password of MQTT server
+#include"datacake.h"
+
+String gsm_send_serial(String command, int delay);
+
+//#define TINY_GSM_MODEM_SIM7600
+#define SerialMon Serial
+#define SerialAT Serial1
+#define GSM_PIN ""
+
+// Your GPRS credentials
+const char apn[] = "dialogbb";
+const char gprsUser[] = "";
+const char gprsPass[] = "";
+
+// MQTT details
+String broker = "mqtt.datacake.co";
+String MQTTport = "8883";
+
+#define UART_BAUD 115200
+
+#define MODEM_TX 32
+#define MODEM_RX 33
+#define GSM_RESET 21
+
+#define D1 34 // Silence Bell
+#define D2 35 // Mains_Fails_Alarm_Input
+#define D3 14 
+#define D4 13
+#define D5 5
+#define R0 12  // RED Indicator
+#define R1 2   // Local Bell
+#define R2 27  // Yellow indicator
+#define R3 4   // Buzzer
+#define R4 23
+#define R5 18
+
+void mqttCallback(char* topic, String payload, unsigned int len) {
+  SerialMon.print("Message arrived [");
+  SerialMon.print(topic);
+  SerialMon.print("]: ");
+  String topicStr = String(topic);
+   
+  // Determine which type of alarm it is
+  if (topicStr.endsWith("/FIRE_ALARM")) {
+    SerialMon.println("Received a FIRE ALARM SIGNAL!");
+    handleFireAlarm(payload);
+  } else if (topicStr.endsWith("/FAULT_ALARM")) {
+    SerialMon.println("Received a FAULT ALARM SIGNAL!");
+    handleFaultAlarm(payload);
+  } else {
+    SerialMon.println("Unknown topic type.");
+  }
+}
+
+
+
+void setup() {
+  // Set console baud rate
+  Serial.begin(115200);
+  delay(10);
+  SerialAT.begin(UART_BAUD, SERIAL_8N1, MODEM_RX, MODEM_TX);
+
+  delay(2000);
+  pinMode(GSM_RESET, OUTPUT);
+  digitalWrite(GSM_RESET, HIGH);  // RS-485
+  delay(2000);
+  
+  pinMode(D1, INPUT_PULLUP); 
+  pinMode(D2, INPUT_PULLUP); 
+  pinMode(D4, INPUT);
+  pinMode(D5, INPUT);
+  pinMode(R0, OUTPUT);
+  pinMode(R1, OUTPUT);
+  pinMode(R2, OUTPUT);
+  pinMode(R3, OUTPUT);
+  pinMode(R4, OUTPUT);
+  pinMode(R5, OUTPUT);
+
+  Init();
+  connectToGPRS();
+  connectToMQTT();
+}
+
+void loop() {
+  
+  handleIncomingMessages();
+  
+}
+
+
+void handleIncomingMessages() {
+  // Request messages from the EC25 module
+  String response = gsm_send_serial("AT+QMTRECV=0,0", 1000);
+
+  // Print the raw response for debugging
+  SerialMon.print("Raw MQTT Response: ");
+  SerialMon.println(response);
+
+  // Check if the response contains "+QMTRECV:"
+  int startPos = response.indexOf("+QMTRECV:");
+  if (startPos != -1) {
+    // Extract the part of the response containing the message
+    String messagePart = response.substring(startPos);
+
+    // Print the extracted message part for debugging
+    SerialMon.print("Extracted Message Part: ");
+    SerialMon.println(messagePart);
+
+    // Remove any extraneous text before "+QMTRECV:"
+    messagePart.trim();
+    
+    // Check if the response is in the expected format
+    if (messagePart.startsWith("+QMTRECV:")) {
+      // Extract the part after "+QMTRECV:" (skip the "+QMTRECV:" prefix)
+      messagePart = messagePart.substring(messagePart.indexOf(':') + 1);
+      
+      // Extract client_idx and msg_id
+      int firstComma = messagePart.indexOf(',');
+      int secondComma = messagePart.indexOf(',', firstComma + 1);
+      String client_idx = messagePart.substring(0, firstComma);
+      String msg_id = messagePart.substring(firstComma + 1, secondComma);
+
+      // Extract topic
+      int firstQuote = messagePart.indexOf('"', secondComma + 1);
+      int secondQuote = messagePart.indexOf('"', firstQuote + 1);
+      String topic = messagePart.substring(firstQuote + 1, secondQuote);
+
+      // Extract payload length
+      int thirdComma = messagePart.indexOf(',', secondQuote + 1);
+      int fourthComma = messagePart.indexOf(',', thirdComma + 1);
+      String payloadLengthStr = messagePart.substring(thirdComma + 1, fourthComma);
+      int payloadLength = payloadLengthStr.toInt();
+
+      // Extract payload
+      int thirdQuote = messagePart.indexOf('"', fourthComma + 1);
+      int fourthQuote = messagePart.indexOf('"', thirdQuote + 1);
+      String payload = messagePart.substring(thirdQuote + 1,  fourthQuote );
+
+      // Debug print
+      SerialMon.print("Received Topic: ");
+      SerialMon.println(topic);
+      SerialMon.print("Received Payload: ");
+      SerialMon.println(payload);
+      SerialMon.print("Payload Length: ");
+      SerialMon.println(payloadLength);
+
+      // Convert topic and payload to mutable char arrays
+      char topicArr[topic.length() + 1];
+     // byte payloadArr[payload.length() + 1];
+
+      topic.toCharArray(topicArr, topic.length() + 1);
+      
+      // Call the MQTT callback function with the extracted values
+      mqttCallback(topicArr, payload, payload.length());
+    } else {
+      SerialMon.println("Unexpected response format.");
+    }
+  } else {
+    SerialMon.println("No new MQTT messages or unexpected response format.");
+  }
+}
+
+void handleFireAlarm(String payload) {
+  int state = payload.toInt();
+  SerialMon.print("FIRE_ALARM STATE: ");
+  SerialMon.println(state);
+
+  if(state){
+    SerialMon.println("Fire Alarm Activated at Cooling Plant");
+    digitalWrite(R0, HIGH);
+    digitalWrite(R1, HIGH);
+  }else{
+    SerialMon.println("Fire Alarm Cleared at Cooling Plant");
+    digitalWrite(R0, LOW);
+    digitalWrite(R1, LOW);   
+  }
+   
+   }
+
+void handleFaultAlarm(String payload) {
+  int state = payload.toInt();
+  SerialMon.print("FAULT_ALARM STATE: ");
+  SerialMon.println(state);
+
+  if(state){
+    SerialMon.println("Fault reported at Cooling Plant");
+    digitalWrite(R2, HIGH);
+    digitalWrite(R3, HIGH);
+  }else{
+    SerialMon.println("Fault cleared at Cooling Plant");
+    digitalWrite(R2, LOW);
+    digitalWrite(R3, LOW);   
+  }
+}
+
+
+void Init(void) {                        // Connecting with the network and GPRS
+  delay(5000);
+  gsm_send_serial("AT+CFUN=1", 10000);
+  gsm_send_serial("AT+CPIN?", 10000);
+  gsm_send_serial("AT+CSQ", 1000);
+  gsm_send_serial("AT+CREG?", 1000);
+  gsm_send_serial("AT+COPS?", 1000);
+  gsm_send_serial("AT+CGATT?", 1000);
+  gsm_send_serial("AT+CPSI?", 500);
+  gsm_send_serial("AT+CGDCONT=1,\"IP\",\"dialogbb\"", 1000);
+  gsm_send_serial("AT+CGACT=1,1", 1000);
+  gsm_send_serial("AT+CGATT?", 1000);
+  gsm_send_serial("AT+CGPADDR=1", 500);
+}
+
+void connectToGPRS(void) {
+  gsm_send_serial("AT+CGATT=1", 1000);
+  gsm_send_serial("AT+CGDCONT=1,\"IP\",\"dialogbb\"", 1000);
+  gsm_send_serial("AT+CGACT=1,1", 1000);
+  gsm_send_serial("AT+CGPADDR=1", 500);
+}
+
+void connectToMQTT(void) {
+  // Initialize MQTT configurations
+  gsm_send_serial("AT+QMTCFG=\"recv/mode\",0,0,1", 1000);
+  gsm_send_serial("AT+QMTCFG=\"SSL\",0,1,2", 1000);
+  int cert_length = mqtt_ca_cert.length(); // Get the length of the CA certificate
+  String ca_cert = "AT+QFUPL=\"RAM:datacake_ca.pem\"," + String(cert_length) + ",100";
+  gsm_send_serial(ca_cert, 1000); // Send the command
+  delay(1000);
+  gsm_send_serial(mqtt_ca_cert, 1000); // Send the command to upload CA singned certificate
+  delay(1000);
+  gsm_send_serial("AT+QSSLCFG=\"cacert\",2,\"RAM:datacake_ca.pem\"", 1000);
+  gsm_send_serial("AT+QMTOPEN=0,\"mqtt.datacake.co\",8883", 1000);
+  delay(2000); // Wait for the connection to establish
+  gsm_send_serial("AT+QMTDISC=0",1000);
+  delay(1000);
+  String mqtt_conn = "AT+QMTCONN=0,\"Receiver_panel\",\"" + username + "\",\"" + password + "\"";
+  gsm_send_serial(mqtt_conn, 1000);
+  delay(2000); // Wait for the connection to establish
+
+  // Subscribe to both topics
+  String topic1 = "dtck-pub/nsd-facp-repeater/7d165773-3625-4c82-9412-5df17217c656/FIRE_ALARM";
+  String topic2 = "dtck-pub/nsd-facp-repeater/7d165773-3625-4c82-9412-5df17217c656/FAULT_ALARM";
+  
+  String sub1 = "AT+QMTSUB=0,0,\"" + topic1 + "\",0";
+  gsm_send_serial(sub1, 1000);
+  delay(1000);
+
+  String sub2 = "AT+QMTSUB=0,1,\"" + topic2 + "\",0";
+  gsm_send_serial(sub2, 1000);
+  delay(2000);
+
+  // Debug: Print MQTT connection status
+  String connStatus = gsm_send_serial("AT+QMTCONN?", 1000);
+  SerialMon.print("MQTT Connection Status: ");
+  SerialMon.println(connStatus);
+}
+
+bool isNetworkConnected() {
+  String response = gsm_send_serial("AT+CREG?", 3000);
+  return (response.indexOf("+CREG: 0,1") != -1 || response.indexOf("+CREG: 0,5") != -1);
+}
+
+bool isGPRSConnected() {
+  String response = gsm_send_serial("AT+CGATT?", 3000);
+  return (response.indexOf("+CGATT: 1") != -1);
+}
+
+String gsm_send_serial(String command, int timeout) {
+  String buff_resp = "";
+  Serial.println("Send ->: " + command);
+  SerialAT.println(command);
+  unsigned long startMillis = millis();
+  
+  while (millis() - startMillis < timeout) {
+    while (SerialAT.available()) {
+      char c = SerialAT.read();
+      buff_resp += c;
+    }
+    delay(10); // Small delay to allow for incoming data to accumulate
+  }
+  
+  Serial.println("Response ->: " + buff_resp);
+  return buff_resp;
+}
