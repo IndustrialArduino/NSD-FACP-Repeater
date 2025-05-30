@@ -39,6 +39,21 @@ String MQTTport = "8883";
 #define R4 23
 #define R5 18
 
+bool RMSA_Status = false ;
+bool inputStatus = false; // FEA, FTA, MSA
+
+#define DEBOUNCE_DELAY 50 
+//Debouncing and states
+unsigned long lastDebounceTime = 0;
+bool lastStableState =  LOW;
+bool currentState    =  LOW;
+
+bool silenceButtonPressed = false;
+bool lastSilenceButtonState = HIGH;
+unsigned long lastSilenceDebounceTime = 0;
+const unsigned long silenceDebounceDelay = 50;
+
+
 void mqttCallback(char* topic, String payload, unsigned int len) {
   SerialMon.print("Message arrived [");
   SerialMon.print(topic);
@@ -89,9 +104,81 @@ void setup() {
 void loop() {
   
   handleIncomingMessages();
+  readInputsAndCheckAlarms();
+  checkSilenceButton(); 
+  maintainMQTTConnection();
   
 }
 
+void readInputsAndCheckAlarms() {
+  unsigned long now = millis();
+  currentState = digitalRead(D2);
+
+    if (currentState!= lastStableState) {
+      if ((now - lastDebounceTime) > DEBOUNCE_DELAY) {
+        lastDebounceTime = now;
+        lastStableState = currentState;
+
+        inputStatus = interpretAlarmStatus(currentState);
+        handleAlarmStateChange(inputStatus);
+      }
+    }
+
+}
+
+bool interpretAlarmStatus( bool state) {
+    return state == HIGH;          //  Mains
+}
+
+void handleAlarmStateChange(bool status) {
+  String topic;
+  String payload = String(status);
+
+      topic = "dtck-pub/nsd-facp-repeater/7d165773-3625-4c82-9412-5df17217c656/RECEIVE_MAINS_FAIL_ALARM";
+      Serial.println(status ? "[ALARM] MAINS Fail" : "[NORMAL] MAINS OK");
+  
+
+  publishToMQTT(topic, payload);
+
+}
+
+void publishToMQTT(String topic, String payload) {
+  String command = "AT+QMTPUBEX=0,1,1,1,\"" + topic + "\"," + String(payload.length());
+  gsm_send_serial(command, 1000);
+  gsm_send_serial(payload + "\x1A", 1000);
+}
+
+void checkSilenceButton() {
+  bool reading = digitalRead(D1);
+
+  if (reading != lastSilenceButtonState) {
+    lastSilenceDebounceTime = millis();
+    lastSilenceButtonState = reading;
+  }
+
+  if ((millis() - lastSilenceDebounceTime) > silenceDebounceDelay) {
+    if (reading == LOW && !silenceButtonPressed) { // Button was just pressed
+      silenceButtonPressed = true;
+
+      Serial.println("[ACTION] Silence button pressed. Turning OFF local bell.");
+      digitalWrite(R1, LOW); // Turn off Relay Output-2 (Local Bell)
+
+    }
+
+    if (reading == HIGH) {
+      silenceButtonPressed = false; // Reset to allow next press
+    }
+  }
+}
+
+
+void maintainMQTTConnection() {
+  String status = gsm_send_serial("AT+QMTCONN?", 1000);
+  if (status.indexOf("+QMTCONN: 0,3") == -1) {
+    Serial.println("[WARNING] MQTT Disconnected. Reconnecting...");
+    connectToMQTT();
+  }
+}
 
 void handleIncomingMessages() {
   // Request messages from the EC25 module
