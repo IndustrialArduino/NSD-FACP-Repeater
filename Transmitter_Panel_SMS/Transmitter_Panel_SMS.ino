@@ -14,10 +14,6 @@ const char apn[] = "dialogbb";
 const char gprsUser[] = "";
 const char gprsPass[] = "";
 
-// MQTT details
-String broker = "mqtt.datacake.co";
-String MQTTport = "8883";
-
 #define UART_BAUD 115200
 
 #define MODEM_TX 32
@@ -52,11 +48,11 @@ bool processing = false;
 
 // Predefined phone numbers
 const char* phoneNumbers[5] = {
-   "+94761111111",
-   "+94771111111"
+   "+94711111111",
+   "+94721111111",
    "+94701111111",
    "+94741111111",
-   "+94781111111",
+   "+94781111111"
   
 };
 
