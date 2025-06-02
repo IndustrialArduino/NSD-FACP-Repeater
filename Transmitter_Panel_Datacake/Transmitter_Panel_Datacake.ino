@@ -164,7 +164,9 @@ void Init(void) {                        // Connecting with the network and GPRS
   gsm_send_serial("AT+COPS?", 1000);
   gsm_send_serial("AT+CGATT?", 1000);
   gsm_send_serial("AT+CPSI?", 500);
-  gsm_send_serial("AT+CGDCONT=1,\"IP\",\"dialogbb\"", 1000);
+  String cmd = "AT+CGDCONT=1,\"IP\",\"" + String(apn) + "\"";
+  gsm_send_serial(cmd, 1000);
+  //gsm_send_serial("AT+CGDCONT=1,\"IP\",\"dialogbb\"", 1000);
   gsm_send_serial("AT+CGACT=1,1", 1000);
   gsm_send_serial("AT+CGATT?", 1000);
   gsm_send_serial("AT+CGPADDR=1", 500);
@@ -172,7 +174,9 @@ void Init(void) {                        // Connecting with the network and GPRS
 
 void connectToGPRS(void) {
   gsm_send_serial("AT+CGATT=1", 1000);
-  gsm_send_serial("AT+CGDCONT=1,\"IP\",\"dialogbb\"", 1000);
+  String cmd = "AT+CGDCONT=1,\"IP\",\"" + String(apn) + "\"";
+  gsm_send_serial(cmd, 1000);
+  //gsm_send_serial("AT+CGDCONT=1,\"IP\",\"dialogbb\"", 1000);
   gsm_send_serial("AT+CGACT=1,1", 1000);
   gsm_send_serial("AT+CGPADDR=1", 500);
 }
