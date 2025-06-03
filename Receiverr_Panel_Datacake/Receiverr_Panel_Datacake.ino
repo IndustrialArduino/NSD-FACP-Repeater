@@ -383,7 +383,7 @@ void connectToMQTT(void) {
   gsm_send_serial(mqtt_ca_cert, 1000); // Send the command to upload CA singned certificate
   delay(1000);
   gsm_send_serial("AT+QSSLCFG=\"cacert\",2,\"RAM:datacake_ca.pem\"", 1000);
-  gsm_send_serial("AT+QMTOPEN=0,\"mqtt.datacake.co\",8883", 1000);
+  gsm_send_serial("AT+QMTOPEN=0,\"159.89.214.202\",8883", 1000);
   delay(2000); // Wait for the connection to establish
   gsm_send_serial("AT+QMTDISC=0",1000);
   delay(1000);

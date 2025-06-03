@@ -206,7 +206,7 @@ void connectToMQTT(void) {
   // Initialize MQTT configurations
   gsm_send_serial("AT+QMTCLOSE=0", 1000);
   gsm_send_serial("AT+QMTCFG=\"recv/mode\",0,0,1", 1000);
-  gsm_send_serial("AT+QMTCFG=\"SSL\",0,1,2", 1000);
+  gsm_send_serial("AT+QMTCFG=\"SSL\",0,1,4", 1000);
   int cert_length = mqtt_ca_cert.length(); // Get the length of the CA certificate
   String ca_cert = "AT+QFUPL=\"RAM:datacake_ca.pem\"," + String(cert_length) + ",100";
   gsm_send_serial(ca_cert, 1000); // Send the command
@@ -214,7 +214,7 @@ void connectToMQTT(void) {
   gsm_send_serial(mqtt_ca_cert, 1000); // Send the command to upload CA singned certificate
   delay(1000);
   gsm_send_serial("AT+QSSLCFG=\"cacert\",2,\"RAM:datacake_ca.pem\"", 1000);
-  gsm_send_serial("AT+QMTOPEN=0,\"mqtt.datacake.co\",8883", 1000);
+  gsm_send_serial("AT+QMTOPEN=0,\"159.89.214.202\",8883", 1000);
   delay(2000); // Wait for the connection to establish
   gsm_send_serial("AT+QMTDISC=0",1000);
   delay(1000);
