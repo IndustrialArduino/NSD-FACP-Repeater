@@ -204,6 +204,7 @@ void connectToGPRS(void) {
 
 void connectToMQTT(void) {
   // Initialize MQTT configurations
+  gsm_send_serial("AT+QMTCLOSE=0", 1000);
   gsm_send_serial("AT+QMTCFG=\"recv/mode\",0,0,1", 1000);
   gsm_send_serial("AT+QMTCFG=\"SSL\",0,1,2", 1000);
   int cert_length = mqtt_ca_cert.length(); // Get the length of the CA certificate

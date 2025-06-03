@@ -2,7 +2,15 @@
 #include <Wire.h>
 #include <WiFi.h>  // Include the WiFi library for MAC address
 #include <ArduinoJson.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_ADS1X15.h>
 
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+
+#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 String gsm_send_serial(String command, int delay);
 
@@ -20,6 +28,9 @@ const char gprsPass[] = "";
 #define MODEM_TX 32
 #define MODEM_RX 33
 #define GSM_RESET 21
+
+#define I2C_SDA 16
+#define I2C_SCL 17
 
 #define D1 34 // Silence Bell
 #define D2 35 // Mains_Fails_Alarm_Input
@@ -68,6 +79,14 @@ const char* smsMessages[2] = {
   "FACP Remote monitoring panel – Mains Fail Alarm", "FACP Remote monitoring panel – Mains Fail Alarm cleared"
 };
 
+String lastReceivedMessage = "";
+unsigned long lastDisplayUpdate = 0;
+const unsigned long displayInterval = 1000;  
+
+unsigned long lastSignalCheckTime = 0;
+const unsigned long signalCheckInterval = 10UL * 60UL * 1000UL; // 10 minutes
+int cachedSignalStrength = -1;
+
 
 void setup() {
   // Set console baud rate
@@ -91,6 +110,8 @@ void setup() {
   pinMode(R4, OUTPUT);
   pinMode(R5, OUTPUT);
 
+  display.display();
+  updateOLED();
   Init();
   connectToGPRS();
 }
@@ -101,6 +122,11 @@ void loop() {
   checkSilenceButton(); 
   handleBuzzerPulse();
   checkForSMS();
+
+  if (millis() - lastDisplayUpdate > displayInterval) {
+    updateOLED();
+    lastDisplayUpdate = millis();
+  }
   
 }
 
@@ -160,6 +186,7 @@ void checkForSMS() {
     int smsIndex = meta.substring(6, meta.indexOf(',', 6)).toInt();
 
     Serial.println("[SMS] Received: " + messageBody);
+    lastReceivedMessage = messageBody;
     handleSMS(messageBody); // Process SMS content
 
     // Delete processed message
@@ -262,7 +289,56 @@ void connectToGPRS(void) {
   gsm_send_serial("AT+CGPADDR=1", 500);
 }
 
+void updateOLED() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
 
+  display.setCursor(0, 0);
+  display.println("Receiver Panel");
+
+  // Fire Alarm Status
+  display.setCursor(0, 12);
+  display.print("MAINS: ");
+  display.println(inputStatus ? "Activated" : "Cleared");
+
+  display.setCursor(0, 24);
+  display.println("Received:");
+
+  display.setCursor(0, 36);
+  display.println(lastReceivedMessage);
+
+  display.setCursor(0, 56);
+  // GSM Signal Strength
+  display.print("Signal: ");
+  // Check if 10 minutes have passed
+  unsigned long now = millis();
+  if (now - lastSignalCheckTime >= signalCheckInterval || lastSignalCheckTime == 0) {
+    lastSignalCheckTime = now;
+    cachedSignalStrength = getGSMSignalStrength();
+  }
+
+  display.print(cachedSignalStrength);
+
+  display.display();
+}
+
+int getGSMSignalStrength() {
+  String response = gsm_send_serial("AT+CSQ", 500);
+  int rssi = -1;
+
+  int index = response.indexOf("+CSQ:");
+  if (index != -1) {
+    int commaIndex = response.indexOf(",", index);
+    if (commaIndex != -1) {
+      String rssiStr = response.substring(index + 6, commaIndex);
+      rssiStr.trim(); 
+      rssi = rssiStr.toInt(); 
+    }
+  }
+
+  return rssi;
+}
 
 bool isNetworkConnected() {
   String response = gsm_send_serial("AT+CREG?", 3000);

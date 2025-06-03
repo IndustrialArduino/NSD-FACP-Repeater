@@ -2,8 +2,17 @@
 #include <Wire.h>
 #include <WiFi.h>  // Include the WiFi library for MAC address
 #include <ArduinoJson.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_ADS1X15.h>
 #include "Secret.h" // Include the file to get the username and password of MQTT server
 #include"datacake.h"
+
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+
+#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 String gsm_send_serial(String command, int delay);
 
@@ -25,6 +34,9 @@ String MQTTport = "8883";
 #define MODEM_TX 32
 #define MODEM_RX 33
 #define GSM_RESET 21
+
+#define I2C_SDA 16
+#define I2C_SCL 17
 
 #define D1 34 // Silence Bell
 #define D2 35 // Mains_Fails_Alarm_Input
@@ -57,6 +69,14 @@ unsigned long lastBuzzerToggleTime = 0;
 bool buzzerState = false;
 const unsigned long buzzerOnTime = 1000;   // 1 second ON
 const unsigned long buzzerOffTime = 5000;  // 5 seconds OFF
+
+String lastReceivedMessage = "";
+unsigned long lastDisplayUpdate = 0;
+const unsigned long displayInterval = 1000;  
+
+unsigned long lastSignalCheckTime = 0;
+const unsigned long signalCheckInterval = 10UL * 60UL * 1000UL; // 10 minutes
+int cachedSignalStrength = -1;
 
 
 void mqttCallback(char* topic, String payload, unsigned int len) {
@@ -99,6 +119,14 @@ void setup() {
   pinMode(R4, OUTPUT);
   pinMode(R5, OUTPUT);
 
+  Wire.begin(I2C_SDA,I2C_SCL);
+
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3D for 128x64
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); // Don't proceed, loop forever
+  }
+  display.display();
+  updateOLED();
   Init();
   connectToGPRS();
   connectToMQTT();
@@ -111,6 +139,11 @@ void loop() {
   checkSilenceButton(); 
   handleBuzzerPulse();
   //maintainMQTTConnection();
+
+ if (millis() - lastDisplayUpdate > displayInterval) {
+    updateOLED();
+    lastDisplayUpdate = millis();
+  }
   
 }
 
@@ -263,10 +296,12 @@ void handleFireAlarm(String payload) {
 
   if(state){
     SerialMon.println("Fire Alarm Activated at Cooling Plant");
+    lastReceivedMessage = "FACP - Fire Alarm Activated at Cooling Plant";
     digitalWrite(R0, HIGH);
     digitalWrite(R1, HIGH);
   }else{
     SerialMon.println("Fire Alarm Cleared at Cooling Plant");
+    lastReceivedMessage = "FACP - Fire Alarm CLEARED at Cooling Plant";
     digitalWrite(R0, LOW);
     digitalWrite(R1, LOW);   
   }
@@ -280,6 +315,7 @@ void handleFaultAlarm(String payload) {
 
   if(state){
     SerialMon.println("Fault reported at Cooling Plant");
+    lastReceivedMessage = "FACP - Fault reported at Cooling Plant";
     digitalWrite(R2, HIGH);
     faultActive = true;         // Enable pulsing
     lastBuzzerToggleTime = millis();  // Reset buzzer timer
@@ -287,6 +323,7 @@ void handleFaultAlarm(String payload) {
     digitalWrite(R3, LOW);      // Start from buzzer OFF
   }else{
     SerialMon.println("Fault cleared at Cooling Plant");
+    lastReceivedMessage = "FACP - Fault cleared at Cooling Plant";
     digitalWrite(R2, LOW);
     digitalWrite(R3, LOW); 
     faultActive = false;  
@@ -335,6 +372,7 @@ void connectToGPRS(void) {
 
 void connectToMQTT(void) {
   // Initialize MQTT configurations
+  gsm_send_serial("AT+QMTCLOSE=0", 1000);
   gsm_send_serial("AT+QMTCFG=\"recv/mode\",0,0,1", 1000);
   gsm_send_serial("AT+QMTCFG=\"SSL\",0,1,2", 1000);
   int cert_length = mqtt_ca_cert.length(); // Get the length of the CA certificate
@@ -368,6 +406,57 @@ void connectToMQTT(void) {
   String connStatus = gsm_send_serial("AT+QMTCONN?", 1000);
   SerialMon.print("MQTT Connection Status: ");
   SerialMon.println(connStatus);
+}
+
+void updateOLED() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(WHITE);
+
+  display.setCursor(0, 0);
+  display.println("Receiver Panel");
+
+  // Fire Alarm Status
+  display.setCursor(0, 12);
+  display.print("MAINS: ");
+  display.println(inputStatus ? "Activated" : "Cleared");
+
+  display.setCursor(0, 24);
+  display.println("Received:");
+
+  display.setCursor(0, 36);
+  display.println(lastReceivedMessage);
+
+  display.setCursor(0, 56);
+  // GSM Signal Strength
+  display.print("Signal: ");
+  // Check if 10 minutes have passed
+  unsigned long now = millis();
+  if (now - lastSignalCheckTime >= signalCheckInterval || lastSignalCheckTime == 0) {
+    lastSignalCheckTime = now;
+    cachedSignalStrength = getGSMSignalStrength();
+  }
+
+  display.print(cachedSignalStrength);
+
+  display.display();
+}
+
+int getGSMSignalStrength() {
+  String response = gsm_send_serial("AT+CSQ", 500);
+  int rssi = -1;
+
+  int index = response.indexOf("+CSQ:");
+  if (index != -1) {
+    int commaIndex = response.indexOf(",", index);
+    if (commaIndex != -1) {
+      String rssiStr = response.substring(index + 6, commaIndex);
+      rssiStr.trim(); 
+      rssi = rssiStr.toInt(); 
+    }
+  }
+
+  return rssi;
 }
 
 bool isNetworkConnected() {
