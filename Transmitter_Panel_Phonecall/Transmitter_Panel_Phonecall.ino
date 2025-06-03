@@ -144,7 +144,7 @@ void handleAlarmStateChange(int idx, bool status) {
 
 
 void makeAlarmCalls(String message) {
-  for (int i = 0; i < 1; i++) {
+  for (int i = 0; i < 3; i++) {
     SerialMon.println("[CALL] Dialing " + phoneNumbers[i]);
 
     // 1. Enable COLP
