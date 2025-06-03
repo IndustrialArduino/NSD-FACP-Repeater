@@ -2,6 +2,15 @@
 #include <Wire.h>
 #include <WiFi.h>  // Include the WiFi library for MAC address
 #include <ArduinoJson.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include <Adafruit_ADS1X15.h>
+
+#define SCREEN_WIDTH 128 // OLED display width, in pixels
+#define SCREEN_HEIGHT 64 // OLED display height, in pixels
+
+#define OLED_RESET     -1 // Reset pin # (or -1 if sharing Arduino reset pin)
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 String gsm_send_serial(String command, int delay);
 
@@ -19,6 +28,9 @@ const char gprsPass[] = "";
 #define MODEM_TX 32
 #define MODEM_RX 33
 #define GSM_RESET 21
+
+#define I2C_SDA 16
+#define I2C_SCL 17
 
 #define D1 34 // Fire_Alarm_Input
 #define D2 35 // Fault_Alarm_Input
@@ -86,6 +98,14 @@ void setup() {
   pinMode(R4, OUTPUT);
   pinMode(R5, OUTPUT);
 
+  Wire.begin(I2C_SDA,I2C_SCL);
+
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3D for 128x64
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); // Don't proceed, loop forever
+  }
+  display.display();
+  updateOLED();
   Init();
   connectToGPRS();
 }
@@ -97,7 +117,8 @@ void loop() {
   readInputsAndCheckAlarms();
 
   processing = false;
-  delay(50); 
+  updateOLED();
+  delay(1000); 
 
 }
 
@@ -174,6 +195,57 @@ void connectToGPRS(void) {
   //gsm_send_serial("AT+CGDCONT=1,\"IP\",\"dialogbb\"", 1000);
   gsm_send_serial("AT+CGACT=1,1", 1000);
   gsm_send_serial("AT+CGPADDR=1", 500);
+}
+
+void updateOLED() {
+  display.clearDisplay();
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(0, 0);
+
+  // Title
+  display.println("Transmitter Panel");
+
+  // Fire Alarm Status
+  display.setCursor(0, 12);
+  display.print("FIRE: ");
+  display.println(inputStatus[0] ? "Activated" : "Cleared");
+
+  // Fault Alarm Status
+  display.setCursor(0, 24);
+  display.print("FAULT: ");
+  display.println(inputStatus[1] ? "Activated" : "Cleared");
+
+  // Mains Fail Alarm Status
+  display.setCursor(0, 36);
+  display.print("MAINS: ");
+  display.println(inputStatus[2] ? "Activated" : "Cleared");
+
+  // GSM Signal Strength
+  int signalStrength = getGSMSignalStrength();
+  display.setCursor(0, 48);
+  display.print("Signal: ");
+  display.print(signalStrength);
+  //display.println(" dBm");
+
+  display.display();
+}
+
+int getGSMSignalStrength() {
+  String response = gsm_send_serial("AT+CSQ", 500);
+  int rssi = -1;
+
+  int index = response.indexOf("+CSQ:");
+  if (index != -1) {
+    int commaIndex = response.indexOf(",", index);
+    if (commaIndex != -1) {
+      String rssiStr = response.substring(index + 6, commaIndex);
+      rssiStr.trim(); 
+      rssi = rssiStr.toInt(); 
+    }
+  }
+
+  return rssi;
 }
 
 bool isNetworkConnected() {
