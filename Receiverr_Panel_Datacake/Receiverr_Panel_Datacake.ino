@@ -348,6 +348,7 @@ void Init(void) {                        // Connecting with the network and GPRS
   delay(5000);
   gsm_send_serial("AT+CFUN=1", 10000);
   gsm_send_serial("AT+CPIN?", 10000);
+  gsm_send_serial("AT+GMR", 1000);
   gsm_send_serial("AT+CSQ", 1000);
   gsm_send_serial("AT+CREG?", 1000);
   gsm_send_serial("AT+COPS?", 1000);

@@ -109,7 +109,12 @@ void setup() {
   pinMode(R3, OUTPUT);
   pinMode(R4, OUTPUT);
   pinMode(R5, OUTPUT);
+  Wire.begin(I2C_SDA,I2C_SCL);
 
+  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3D for 128x64
+    Serial.println(F("SSD1306 allocation failed"));
+    for(;;); // Don't proceed, loop forever
+  }
   display.display();
   updateOLED();
   Init();
