@@ -5,7 +5,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_ADS1X15.h>
-#include "Secret.h" // Include the file to get the username and password of MQTT server
+#include "Secret.h" // Include file to get the username and password of MQTT server
 #include"datacake.h"
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
@@ -150,11 +150,10 @@ void setup() {
 void loop() {
 
   checkForSMS();
-  handleIncomingMessages();
+  //handleIncomingMessages();
   readInputsAndCheckAlarms();
   checkSilenceButton(); 
   handleBuzzerPulse();
-  //maintainMQTTConnection();
 
  if (millis() - lastDisplayUpdate > displayInterval) {
     updateOLED();
