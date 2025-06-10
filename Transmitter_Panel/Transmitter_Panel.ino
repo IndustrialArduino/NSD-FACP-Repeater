@@ -64,7 +64,7 @@ bool lastStableState[3] = {HIGH, LOW, LOW};
 bool currentState[3] = {HIGH, LOW, LOW};
 bool processing = false;
 
-String phonecall_phoneNumbers[3] = {"+94769164662", "+94741111111", "+94771111111"};
+String phonecall_phoneNumbers[3] = {"+94761111111", "+94741111111", "+94771111111"};
 
 // Predefined phone numbers
 const char* phoneNumbers[5] = {
