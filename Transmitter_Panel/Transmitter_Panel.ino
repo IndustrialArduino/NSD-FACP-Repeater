@@ -257,7 +257,7 @@ void makeAlarmCalls(String message) {
 
     // 4. Handle call result
     if (callAnswered) {
-      delay(500);
+      delay(3000);
       
     for (int playCount = 0; playCount < 2; playCount++) {
       SerialMon.println("[CALL] Playing message via TTS...");
@@ -267,7 +267,7 @@ void makeAlarmCalls(String message) {
       unsigned long ttsStart = millis();
       bool ttsEndedEarly = false;
       
-      while (millis() - ttsStart < 15000) {
+      while (millis() - ttsStart < 5000) {
         while (SerialAT.available()) {
           String ttsLine = SerialAT.readStringUntil('\n');
           ttsLine.trim();
