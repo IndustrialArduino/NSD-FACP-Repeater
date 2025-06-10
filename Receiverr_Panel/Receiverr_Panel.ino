@@ -149,8 +149,7 @@ void setup() {
 
 void loop() {
 
-  checkForSMS();
-  //handleIncomingMessages();
+  checkForMessage();
   readInputsAndCheckAlarms();
   checkSilenceButton(); 
   handleBuzzerPulse();
@@ -217,31 +216,31 @@ void sendSMS(String message) {
   }
 }
 
-void checkForSMS() {
+void checkForMessage() {
   String response = gsm_send_serial("AT+CMGL=\"REC UNREAD\"", 2000); // List unread messages
-
-  int indexStart = response.indexOf("+CMGL:");
-  while (indexStart != -1) {
-    int indexEnd = response.indexOf("\n", indexStart);
-    String meta = response.substring(indexStart, indexEnd);
-    int bodyStart = indexEnd + 1;
-    int bodyEnd = response.indexOf("\r", bodyStart);
-    String messageBody = response.substring(bodyStart, bodyEnd);
-
-    // Extract SMS index
-    int smsIndex = meta.substring(6, meta.indexOf(',', 6)).toInt();
-
-    Serial.println("[SMS] Received: " + messageBody);
-    lastReceivedMessage = messageBody;
-    handleSMS(messageBody); // Process SMS content
-
-    // Delete processed message
-    gsm_send_serial("AT+CMGD=" + String(smsIndex), 1000);
-
-    // Check if more messages exist
-    indexStart = response.indexOf("+CMGL:", bodyEnd);
-  }
 }
+
+void handleSMSLine(String metaLine) {
+  int indexEnd = metaLine.indexOf("\n");
+  int bodyStart = indexEnd + 1;
+  String messageBody = "";
+
+  if (SerialAT.available()) {
+    messageBody = SerialAT.readStringUntil('\r');
+    messageBody.trim();
+  }
+
+  // Extract SMS index
+  int smsIndex = metaLine.substring(6, metaLine.indexOf(',', 6)).toInt();
+
+  Serial.println("[SMS] Received: " + messageBody);
+  lastReceivedMessage = messageBody;
+  handleSMS(messageBody);
+
+  // Delete processed message
+  gsm_send_serial("AT+CMGD=" + String(smsIndex), 1000);
+}
+
 
 void handleSMS(String message) {
   message.trim();
@@ -303,76 +302,35 @@ void maintainMQTTConnection() {
   }
 }
 
-void handleIncomingMessages() {
-  // Request messages from the EC25 module
-  String response = gsm_send_serial("AT+QMTRECV=0,0", 1000);
+void handleIncomingMessages(String line) {
 
-  // Print the raw response for debugging
-  SerialMon.print("Raw MQTT Response: ");
-  SerialMon.println(response);
+  line.trim();
+  if (!line.startsWith("+QMTRECV:")) return;
 
-  // Check if the response contains "+QMTRECV:"
-  int startPos = response.indexOf("+QMTRECV:");
-  if (startPos != -1) {
-    // Extract the part of the response containing the message
-    String messagePart = response.substring(startPos);
+  // Parse MQTT message
+  String messagePart = line.substring(line.indexOf(':') + 1);
+  int firstComma = messagePart.indexOf(',');
+  int secondComma = messagePart.indexOf(',', firstComma + 1);
+  String client_idx = messagePart.substring(0, firstComma);
+  String msg_id = messagePart.substring(firstComma + 1, secondComma);
 
-    // Print the extracted message part for debugging
-    SerialMon.print("Extracted Message Part: ");
-    SerialMon.println(messagePart);
+  int firstQuote = messagePart.indexOf('"', secondComma + 1);
+  int secondQuote = messagePart.indexOf('"', firstQuote + 1);
+  String topic = messagePart.substring(firstQuote + 1, secondQuote);
 
-    // Remove any extraneous text before "+QMTRECV:"
-    messagePart.trim();
-    
-    // Check if the response is in the expected format
-    if (messagePart.startsWith("+QMTRECV:")) {
-      // Extract the part after "+QMTRECV:" (skip the "+QMTRECV:" prefix)
-      messagePart = messagePart.substring(messagePart.indexOf(':') + 1);
-      
-      // Extract client_idx and msg_id
-      int firstComma = messagePart.indexOf(',');
-      int secondComma = messagePart.indexOf(',', firstComma + 1);
-      String client_idx = messagePart.substring(0, firstComma);
-      String msg_id = messagePart.substring(firstComma + 1, secondComma);
+  int thirdComma = messagePart.indexOf(',', secondQuote + 1);
+  int fourthComma = messagePart.indexOf(',', thirdComma + 1);
+  int payloadLength = messagePart.substring(thirdComma + 1, fourthComma).toInt();
 
-      // Extract topic
-      int firstQuote = messagePart.indexOf('"', secondComma + 1);
-      int secondQuote = messagePart.indexOf('"', firstQuote + 1);
-      String topic = messagePart.substring(firstQuote + 1, secondQuote);
+  int thirdQuote = messagePart.indexOf('"', fourthComma + 1);
+  int fourthQuote = messagePart.indexOf('"', thirdQuote + 1);
+  String payload = messagePart.substring(thirdQuote + 1, fourthQuote);
 
-      // Extract payload length
-      int thirdComma = messagePart.indexOf(',', secondQuote + 1);
-      int fourthComma = messagePart.indexOf(',', thirdComma + 1);
-      String payloadLengthStr = messagePart.substring(thirdComma + 1, fourthComma);
-      int payloadLength = payloadLengthStr.toInt();
+  // Forward to MQTT callback
+  char topicArr[topic.length() + 1];
+  topic.toCharArray(topicArr, topic.length() + 1);
 
-      // Extract payload
-      int thirdQuote = messagePart.indexOf('"', fourthComma + 1);
-      int fourthQuote = messagePart.indexOf('"', thirdQuote + 1);
-      String payload = messagePart.substring(thirdQuote + 1,  fourthQuote );
-
-      // Debug print
-      SerialMon.print("Received Topic: ");
-      SerialMon.println(topic);
-      SerialMon.print("Received Payload: ");
-      SerialMon.println(payload);
-      SerialMon.print("Payload Length: ");
-      SerialMon.println(payloadLength);
-
-      // Convert topic and payload to mutable char arrays
-      char topicArr[topic.length() + 1];
-     // byte payloadArr[payload.length() + 1];
-
-      topic.toCharArray(topicArr, topic.length() + 1);
-      
-      // Call the MQTT callback function with the extracted values
-      mqttCallback(topicArr, payload, payload.length());
-    } else {
-      SerialMon.println("Unexpected response format.");
-    }
-  } else {
-    SerialMon.println("No new MQTT messages or unexpected response format.");
-  }
+  mqttCallback(topicArr, payload, payload.length());
 }
 
 void handleFireAlarm(String payload) {
@@ -517,7 +475,6 @@ void updateOLED() {
   display.println(lastReceivedMessage);
 
   display.setCursor(0, 56);
-  // GSM Signal Strength
   display.print("Signal: ");
   // Check if 10 minutes have passed
   unsigned long now = millis();
@@ -566,8 +523,30 @@ String gsm_send_serial(String command, int timeout) {
   
   while (millis() - startMillis < timeout) {
     while (SerialAT.available()) {
-      char c = SerialAT.read();
-      buff_resp += c;
+//      char c = SerialAT.read();
+//      buff_resp += c;
+//    }
+ String line = SerialAT.readStringUntil('\n');
+      line.trim();
+
+      if (line.length() == 0) continue;
+
+      Serial.println("[Modem Line] " + line);
+
+      // Handle MQTT lines
+      if (line.startsWith("+QMTRECV:")) {
+        handleIncomingMessages(line); // Reuse MQTT message parser
+        continue; // Do not append to buffer
+      }
+
+      // Handle SMS lines
+      if (line.startsWith("+CMGL:")) {
+        handleSMSLine(line); // Extract and forward SMS
+        continue; // Do not append to buffer
+      }
+
+      // Accumulate only unhandled lines
+      buff_resp += line + "\n";
     }
     delay(10); // Small delay to allow for incoming data to accumulate
   }
