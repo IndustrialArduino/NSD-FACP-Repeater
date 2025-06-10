@@ -64,11 +64,11 @@ bool lastStableState[3] = {HIGH, LOW, LOW};
 bool currentState[3] = {HIGH, LOW, LOW};
 bool processing = false;
 
-String phonecall_phoneNumbers[3] = {"+94761111111", "+94741111111", "+94771111111"};
+String phonecall_phoneNumbers[3] = {"+94769164662", "+94741111111", "+94771111111"};
 
 // Predefined phone numbers
 const char* phoneNumbers[5] = {
-   "+94711111111",
+   "+94761111111",
    "+94721111111",
    "+94701111111",
    "+94741111111",
@@ -195,7 +195,7 @@ void handleAlarmStateChange(int idx, bool status) {
 }
 
 void sendSMS(String message) {
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < 1; i++) {
     gsm_send_serial("AT+CMGF=1", 1000); // Set SMS text mode
     gsm_send_serial("AT+CSCS=\"GSM\"", 500); // Use GSM character set
 
@@ -220,7 +220,7 @@ void maintainMQTTConnection() {
 }
 
 void makeAlarmCalls(String message) {
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < 1; i++) {
     SerialMon.println("[CALL] Dialing " + phonecall_phoneNumbers[i]);
 
     // 1. Enable COLP
@@ -257,11 +257,16 @@ void makeAlarmCalls(String message) {
 
     // 4. Handle call result
     if (callAnswered) {
+      delay(500);
+      
+    for (int playCount = 0; playCount < 2; playCount++) {
       SerialMon.println("[CALL] Playing message via TTS...");
-      gsm_send_serial("AT+QWTTS=1,1,2,\"" + message + "\"", 2000); // Start TTS
+      gsm_send_serial("AT+QWTTS=1,1,2,\"" + message + "\"", 1000); // Start TTS
 
       // 5. Wait for TTS to finish or call to end early
       unsigned long ttsStart = millis();
+      bool ttsEndedEarly = false;
+      
       while (millis() - ttsStart < 15000) {
         while (SerialAT.available()) {
           String ttsLine = SerialAT.readStringUntil('\n');
@@ -271,11 +276,19 @@ void makeAlarmCalls(String message) {
           if (ttsLine.indexOf("NO CARRIER") != -1 || ttsLine.indexOf("BUSY") != -1) {
             SerialMon.println("[CALL] Call ended during TTS.");
             callEnded = true;
+            ttsEndedEarly = true;
             break;
           }
         }
-        if (callEnded) break;
+        if (callEnded|| ttsEndedEarly) break;
         delay(100);
+      }
+         if (callEnded || ttsEndedEarly) break;
+
+        if (playCount == 0) {
+          SerialMon.println("[CALL] Waiting before playing message again...");
+          delay(500); // Delay before second TTS
+        }
       }
     } else {
       SerialMon.println("[CALL] Not answered or ended early.");
@@ -287,6 +300,7 @@ void makeAlarmCalls(String message) {
 
     // 7. Wait before calling next number
     delay(3000);
+    
   }
 }
 
