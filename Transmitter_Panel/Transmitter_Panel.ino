@@ -6,6 +6,7 @@
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_ADS1X15.h>
 #include "Secret.h" // Include file to get the username and password of MQTT server
+#include "Configurations.h"
 #include "datacake.h"
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
@@ -19,11 +20,6 @@ String gsm_send_serial(String command, int delay);
 #define SerialMon Serial
 #define SerialAT Serial1
 #define GSM_PIN ""
-
-// Your GPRS credentials
-const char apn[] = "dialogbb";
-const char gprsUser[] = "";
-const char gprsPass[] = "";
 
 // MQTT details
 String broker = "mqtt.datacake.co";
@@ -64,18 +60,6 @@ bool lastStableState[3] = {HIGH, LOW, LOW};
 bool currentState[3] = {HIGH, LOW, LOW};
 bool processing = false;
 
-String phonecall_phoneNumbers[3] = {"+94769164662", "+94741111111", "+94771111111"};
-
-// Predefined phone numbers
-const char* phoneNumbers[5] = {
-   "+94769164662",
-   "+94740432001",
-   "+94701111111",
-   "+94741111111",
-   "+94781111111"
-  
-};
-
 // Alarm messages
 const char* smsMessages[3][2] = {
   { "FACP - Fire Alarm Activated at Cooling Plant", "FACP - Fire Alarm CLEARED at Cooling Plant" },
@@ -86,7 +70,6 @@ const char* smsMessages[3][2] = {
 unsigned long lastAliveSMSSentTime = 0;
 const unsigned long aliveSMSInterval = 1800000; // 30 minutes in milliseconds
 
-const char* ReceiverPanelAlive = {"+94761111111" };
 String MQTTconnection = "";
 String GPRSconnection = "";
 

@@ -6,6 +6,7 @@
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_ADS1X15.h>
 #include "Secret.h" // Include file to get the username and password of MQTT server
+#include "Configurations.h"
 #include"datacake.h"
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
@@ -19,11 +20,6 @@ String gsm_send_serial(String command, int delay);
 #define SerialMon Serial
 #define SerialAT Serial1
 #define GSM_PIN ""
-
-// Your GPRS credentials
-const char apn[] = "dialogbb";
-const char gprsUser[] = "";
-const char gprsPass[] = "";
 
 // MQTT details
 String broker = "mqtt.datacake.co";
@@ -69,16 +65,6 @@ unsigned long lastBuzzerToggleTime = 0;
 bool buzzerState = false;
 const unsigned long buzzerOnTime = 1000;   // 1 second ON
 const unsigned long buzzerOffTime = 5000;  // 5 seconds OFF
-
-// Predefined phone numbers
-const char* phoneNumbers[5] = {
-   "+94769164662",
-   "+94771111111",
-   "+94701111111",
-   "+94741111111",
-   "+94711111111"
-  
-};
 
 // Alarm messages
 const char* smsMessages[2] = {
@@ -140,6 +126,8 @@ void setup() {
   pinMode(R3, OUTPUT);
   pinMode(R4, OUTPUT);
   pinMode(R5, OUTPUT);
+
+  digitalWrite(R0, LOW);digitalWrite(R1, LOW);digitalWrite(R2, LOW);digitalWrite(R3, LOW);digitalWrite(R4, LOW);
 
   Wire.begin(I2C_SDA,I2C_SCL);
 
