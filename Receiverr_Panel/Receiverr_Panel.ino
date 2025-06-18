@@ -47,7 +47,7 @@ String MQTTport = "8883";
 #define R1 2   // Local Bell
 #define R2 27  // Yellow indicator
 #define R3 4   // Buzzer
-#define R4 23
+#define R4 23  //TX ALIVE INDICATOR
 #define R5 18
 
 bool RMSA_Status = false ;
@@ -72,7 +72,7 @@ const unsigned long buzzerOffTime = 5000;  // 5 seconds OFF
 
 // Predefined phone numbers
 const char* phoneNumbers[5] = {
-   "+94761111111",
+   "+94769164662",
    "+94771111111",
    "+94701111111",
    "+94741111111",
@@ -92,6 +92,13 @@ const unsigned long displayInterval = 1000;
 unsigned long lastSignalCheckTime = 0;
 const unsigned long signalCheckInterval = 10UL * 60UL * 1000UL; // 10 minutes
 int cachedSignalStrength = -1;
+
+unsigned long lastTransmitterAliveTime = 0;
+const unsigned long transmitterTimeout = 30UL * 60UL * 1000UL;  // 30 minutes
+bool transmitterDeadShown = false;
+
+String MQTTconnection = "";
+String GPRSconnection = "";
 
 
 void mqttCallback(char* topic, String payload, unsigned int len) {
@@ -153,6 +160,9 @@ void loop() {
   readInputsAndCheckAlarms();
   checkSilenceButton(); 
   handleBuzzerPulse();
+  checkTransmitterAlive();
+  isGPRSConnected();
+  maintainMQTTConnection();
 
  if (millis() - lastDisplayUpdate > displayInterval) {
     updateOLED();
@@ -206,7 +216,7 @@ void publishToMQTT(String topic, String payload) {
 }
 
 void sendSMS(String message) {
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < 1; i++) {
     gsm_send_serial("AT+CMGF=1", 1000); // Set SMS text mode
     gsm_send_serial("AT+CSCS=\"GSM\"", 500); // Use GSM character set
 
@@ -269,8 +279,24 @@ void handleSMS(String message) {
     digitalWrite(R2, LOW);
     digitalWrite(R3, LOW);
     faultActive = false;
+  }else if (message.indexOf("transmitter is alive") != -1) {
+    Serial.println("[SMS Action] TRANSMITTER ALIVE RECEIVED");
+    digitalWrite(R4, LOW);
+    lastTransmitterAliveTime = millis();
+    transmitterDeadShown = false; // Reset flag to allow showing again if needed
+  }
+
+}
+
+void checkTransmitterAlive() {
+  if (millis() - lastTransmitterAliveTime > transmitterTimeout && !transmitterDeadShown) {
+    Serial.println("[Warning] Transmitter is dead!");
+    digitalWrite(R4, HIGH);
+    lastReceivedMessage = "Transmitter is dead!";
+    transmitterDeadShown = true;
   }
 }
+
 
 void checkSilenceButton() {
   bool reading = digitalRead(D1);
@@ -298,7 +324,10 @@ void maintainMQTTConnection() {
   String status = gsm_send_serial("AT+QMTCONN?", 1000);
   if (status.indexOf("+QMTCONN: 0,3") == -1) {
     Serial.println("[WARNING] MQTT Disconnected. Reconnecting...");
+    MQTTconnection = "Disconnected";
     connectToMQTT();
+  }else{
+    MQTTconnection = "Connected"; 
   }
 }
 
@@ -465,16 +494,26 @@ void updateOLED() {
 
   // Fire Alarm Status
   display.setCursor(0, 12);
-  display.print("MAINS: ");
-  display.println(inputStatus ? "Activated" : "Cleared");
+  display.print("I1:");
+  display.print(inputStatus ? "H " : "L ");
+
+  display.print("R0:");
+  display.print(digitalRead(R0) ? "On " : "Off ");
+
+  display.print("R1:");
+  display.print(digitalRead(R1) ? "On " : "Off ");
 
   display.setCursor(0, 24);
-  display.println("Received:");
+  display.print("R2:");
+  display.print(digitalRead(R2) ? "On " : "Off ");
+
+  display.print("R3:");
+  display.print(digitalRead(R3) ? "On " : "Off ");
+
+  display.print("R4:");
+  display.print(digitalRead(R4) ? "On" : "Off");
 
   display.setCursor(0, 36);
-  display.println(lastReceivedMessage);
-
-  display.setCursor(0, 56);
   display.print("Signal: ");
   // Check if 10 minutes have passed
   unsigned long now = millis();
@@ -484,6 +523,14 @@ void updateOLED() {
   }
 
   display.print(cachedSignalStrength);
+
+  display.setCursor(0, 48);
+  display.print("GPRS: ");
+  display.print(GPRSconnection);
+
+  display.setCursor(0, 56);
+  display.print("MQTT: ");
+  display.print(MQTTconnection);
 
   display.display();
 }
@@ -510,9 +557,15 @@ bool isNetworkConnected() {
   return (response.indexOf("+CREG: 0,1") != -1 || response.indexOf("+CREG: 0,5") != -1);
 }
 
-bool isGPRSConnected() {
-  String response = gsm_send_serial("AT+CGATT?", 3000);
-  return (response.indexOf("+CGATT: 1") != -1);
+void isGPRSConnected() {
+  String status = gsm_send_serial("AT+CGATT?", 3000);
+  if (status.indexOf("+CGATT: 1") == -1){
+    Serial.println("[WARNING] MQTT Disconnected. Reconnecting...");
+    GPRSconnection = "Deactive"; 
+    connectToGPRS();
+  }else{
+    GPRSconnection = "Active"; 
+   }
 }
 
 String gsm_send_serial(String command, int timeout) {

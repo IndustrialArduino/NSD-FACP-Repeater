@@ -6,7 +6,7 @@
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_ADS1X15.h>
 #include "Secret.h" // Include file to get the username and password of MQTT server
-#include"datacake.h"
+#include "datacake.h"
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
@@ -64,12 +64,12 @@ bool lastStableState[3] = {HIGH, LOW, LOW};
 bool currentState[3] = {HIGH, LOW, LOW};
 bool processing = false;
 
-String phonecall_phoneNumbers[3] = {"+94761111111", "+94741111111", "+94771111111"};
+String phonecall_phoneNumbers[3] = {"+94769164662", "+94741111111", "+94771111111"};
 
 // Predefined phone numbers
 const char* phoneNumbers[5] = {
-   "+94761111111",
-   "+94721111111",
+   "+94769164662",
+   "+94740432001",
    "+94701111111",
    "+94741111111",
    "+94781111111"
@@ -82,6 +82,13 @@ const char* smsMessages[3][2] = {
   { "FACP - Fault reported at Cooling Plant", "FACP - Fault cleared at Cooling Plant" },
   { "FACP – Mains Power Fail reported at Cooling Plant", "FACP - Mains Power Fail cleared at Cooling Plant" }
 };
+
+unsigned long lastAliveSMSSentTime = 0;
+const unsigned long aliveSMSInterval = 1800000; // 30 minutes in milliseconds
+
+const char* ReceiverPanelAlive = {"+94761111111" };
+String MQTTconnection = "";
+String GPRSconnection = "";
 
 void setup() {
   // Set console baud rate
@@ -124,10 +131,18 @@ void loop() {
   processing = true;
 
   readInputsAndCheckAlarms();
+  isGPRSConnected();
   maintainMQTTConnection();
 
   processing = false;
   updateOLED();
+
+  unsigned long currentAliveMillis = millis();
+  if (currentAliveMillis - lastAliveSMSSentTime >= aliveSMSInterval) {
+      sendAliveSMS();
+      lastAliveSMSSentTime = currentAliveMillis;
+  }
+  
   delay(1000); 
 
 }
@@ -195,7 +210,7 @@ void handleAlarmStateChange(int idx, bool status) {
 }
 
 void sendSMS(String message) {
-  for (int i = 0; i < 1; i++) {
+  for (int i = 0; i < 2; i++) {
     gsm_send_serial("AT+CMGF=1", 1000); // Set SMS text mode
     gsm_send_serial("AT+CSCS=\"GSM\"", 500); // Use GSM character set
 
@@ -204,6 +219,20 @@ void sendSMS(String message) {
     gsm_send_serial(message + "\x1A", 5000); // Send message with Ctrl+Z
   }
 }
+
+void sendAliveSMS() {
+  String message = "FACP - Transmitter is alive ";
+  Serial.println("[HEARTBEAT SMS] Sending alive message");
+
+    gsm_send_serial("AT+CMGF=1", 1000); // Text mode
+    gsm_send_serial("AT+CSCS=\"GSM\"", 500); // Use GSM charset
+
+    String cmd = String("AT+CMGS=\"") + ReceiverPanelAlive + "\"";
+    gsm_send_serial(cmd, 1000);
+    gsm_send_serial(message + "\x1A", 5000); // Send message with Ctrl+Z
+
+}
+
 
 void publishToMQTT(String topic, String payload) {
   String command = "AT+QMTPUBEX=0,1,1,1,\"" + topic + "\"," + String(payload.length());
@@ -215,7 +244,10 @@ void maintainMQTTConnection() {
   String status = gsm_send_serial("AT+QMTCONN?", 1000);
   if (status.indexOf("+QMTCONN: 0,3") == -1) {
     Serial.println("[WARNING] MQTT Disconnected. Reconnecting...");
+    MQTTconnection = "Disconnected"; 
     connectToMQTT();
+  }else{
+    MQTTconnection = "Connected"; 
   }
 }
 
@@ -363,27 +395,29 @@ void updateOLED() {
   // Title
   display.println("Transmitter Panel");
 
-  // Fire Alarm Status
+  // I1, I2, I3 Inputs in one line
   display.setCursor(0, 12);
-  display.print("FIRE: ");
-  display.println(inputStatus[0] ? "Activated" : "Cleared");
-
-  // Fault Alarm Status
-  display.setCursor(0, 24);
-  display.print("FAULT: ");
-  display.println(inputStatus[1] ? "Activated" : "Cleared");
-
-  // Mains Fail Alarm Status
-  display.setCursor(0, 36);
-  display.print("MAINS: ");
-  display.println(inputStatus[2] ? "Activated" : "Cleared");
+  display.print("I1:");
+  display.print(inputStatus[0] ? "H " : "L ");
+  display.print("I2:");
+  display.print(inputStatus[1] ? "H " : "L ");
+  display.print("I3:");
+  display.println(inputStatus[2] ? "H" : "L");
 
   // GSM Signal Strength
   int signalStrength = getGSMSignalStrength();
-  display.setCursor(0, 48);
+  display.setCursor(0, 24);
   display.print("Signal: ");
   display.print(signalStrength);
   //display.println(" dBm");
+
+  display.setCursor(0, 36);
+  display.print("GPRS: ");
+  display.print(GPRSconnection);
+
+  display.setCursor(0, 48);
+  display.print("MQTT: ");
+  display.print(MQTTconnection);
 
   display.display();
 }
@@ -411,9 +445,15 @@ bool isNetworkConnected() {
   return (response.indexOf("+CREG: 0,1") != -1 || response.indexOf("+CREG: 0,5") != -1);
 }
 
-bool isGPRSConnected() {
-  String response = gsm_send_serial("AT+CGATT?", 3000);
-  return (response.indexOf("+CGATT: 1") != -1);
+void isGPRSConnected() {
+  String status = gsm_send_serial("AT+CGATT?", 3000);
+  if (status.indexOf("+CGATT: 1") == -1){
+    Serial.println("[WARNING] GPRS Disconnected. Reconnecting...");
+    GPRSconnection = "Deactive"; 
+    connectToGPRS();
+  }else{
+    GPRSconnection = "Active"; 
+   }
 }
 
 String gsm_send_serial(String command, int timeout) {
