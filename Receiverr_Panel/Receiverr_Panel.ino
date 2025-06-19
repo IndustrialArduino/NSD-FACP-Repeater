@@ -198,7 +198,7 @@ void handleAlarmStateChange(bool status) {
 }
 
 void publishToMQTT(String topic, String payload) {
-  String command = "AT+QMTPUBEX=0,1,1,1,\"" + topic + "\"," + String(payload.length());
+  String command = "AT+QMTPUBEX=0,1,1,0,\"" + topic + "\"," + String(payload.length());
   gsm_send_serial(command, 1000);
   gsm_send_serial(payload + "\x1A", 1000);
 }
