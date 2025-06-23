@@ -7,6 +7,7 @@
 #include <Adafruit_ADS1X15.h>
 #include "Secret.h" // Include file to get the username and password of MQTT server
 #include "Configurations.h"
+#include "Message_Content.h"
 #include"datacake.h"
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
@@ -57,8 +58,11 @@ bool currentState    =  LOW;
 
 bool silenceButtonPressed = false;
 bool lastSilenceButtonState = HIGH;
+unsigned long d1ActiveStartTime = 0;
 unsigned long lastSilenceDebounceTime = 0;
 const unsigned long silenceDebounceDelay = 50;
+const unsigned long silenceHoldTime = 2000;     // 2 seconds
+const unsigned long rebootHoldTime = 10000;     // 10 seconds
 
 bool faultActive = false;
 unsigned long lastBuzzerToggleTime = 0;
@@ -66,10 +70,6 @@ bool buzzerState = false;
 const unsigned long buzzerOnTime = 1000;   // 1 second ON
 const unsigned long buzzerOffTime = 5000;  // 5 seconds OFF
 
-// Alarm messages
-const char* smsMessages[2] = {
-  "FACP Remote monitoring panel – Mains Fail Alarm", "FACP Remote monitoring panel – Mains Fail Alarm cleared"
-};
 
 String lastReceivedMessage = "";
 unsigned long lastDisplayUpdate = 0;
@@ -248,11 +248,15 @@ void handleSMS(String message) {
     Serial.println("[SMS Action] FIRE ALARM ON");
     digitalWrite(R0, HIGH);
     digitalWrite(R1, HIGH);
+    lastTransmitterAliveTime = millis();
+    transmitterDeadShown = false;
   }
   else if (message.indexOf("fire alarm cleared") != -1) {
     Serial.println("[SMS Action] FIRE ALARM OFF");
     digitalWrite(R0, LOW);
     digitalWrite(R1, LOW);
+    lastTransmitterAliveTime = millis();
+    transmitterDeadShown = false;
   }
   else if (message.indexOf("fault reported") != -1) {
     Serial.println("[SMS Action] FAULT ON");
@@ -261,12 +265,16 @@ void handleSMS(String message) {
     lastBuzzerToggleTime = millis();
     buzzerState = false;
     digitalWrite(R3, LOW); // Start from OFF
+    lastTransmitterAliveTime = millis();
+    transmitterDeadShown = false;
   }
   else if (message.indexOf("fault cleared") != -1) {
     Serial.println("[SMS Action] FAULT OFF");
     digitalWrite(R2, LOW);
     digitalWrite(R3, LOW);
     faultActive = false;
+    lastTransmitterAliveTime = millis();
+    transmitterDeadShown = false;
   }else if (message.indexOf("transmitter is alive") != -1) {
     Serial.println("[SMS Action] TRANSMITTER ALIVE RECEIVED");
     digitalWrite(R4, LOW);
@@ -289,21 +297,39 @@ void checkTransmitterAlive() {
 void checkSilenceButton() {
   bool reading = digitalRead(D1);
 
+  // Debounce logic (optional for noisy inputs)
   if (reading != lastSilenceButtonState) {
     lastSilenceDebounceTime = millis();
     lastSilenceButtonState = reading;
   }
 
   if ((millis() - lastSilenceDebounceTime) > silenceDebounceDelay) {
-    if (reading == LOW && !silenceButtonPressed) { // Button was just pressed
-      silenceButtonPressed = true;
+    if (reading == LOW) {
+      // Start timer if not already running
+      if (d1ActiveStartTime == 0) {
+        d1ActiveStartTime = millis();
+      }
 
-      Serial.println("[ACTION] Silence button pressed. Turning OFF local bell.");
-      digitalWrite(R1, LOW); // Turn off Relay Output-2 (Local Bell)
-    }
+      unsigned long heldDuration = millis() - d1ActiveStartTime;
 
-    if (reading == HIGH) {
-      silenceButtonPressed = false; // Reset to allow next press
+      // Silence bell after 2 seconds
+      if (!silenceButtonPressed && heldDuration >= silenceHoldTime) {
+        Serial.println("[ACTION] D1 held 2s. Silencing bell.");
+        digitalWrite(R1, LOW); // Turn off Local Bell
+        faultActive = false;  // Turn off Buzzer
+        silenceButtonPressed = true;
+      }
+
+      // Reboot after 10 seconds
+      if (heldDuration >= rebootHoldTime) {
+        Serial.println("[REBOOT] D1 held >10s. Rebooting...");
+        ESP.restart();  
+      }
+
+    } else {
+      // Reset when input released
+      d1ActiveStartTime = 0;
+      silenceButtonPressed = false;
     }
   }
 }
