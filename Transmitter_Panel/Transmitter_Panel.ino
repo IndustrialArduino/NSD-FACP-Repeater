@@ -64,6 +64,7 @@ bool processing = false;
 
 unsigned long lastAliveSMSSentTime = 0;
 const unsigned long aliveSMSInterval = 1800000; // 30 minutes in milliseconds
+bool aliveMessageSentOnce = false;
 
 String MQTTconnection = "";
 String GPRSconnection = "";
@@ -122,16 +123,18 @@ void loop() {
     lastStatusMQTTSentTime = now;
   }
 
-
-  processing = false;
-  updateOLED();
-
   unsigned long currentAliveMillis = millis();
-  if (currentAliveMillis - lastAliveSMSSentTime >= aliveSMSInterval) {
-    sendAliveSMS();
+  if (!aliveMessageSentOnce) {
+    sendAliveMessage();  
+    lastAliveSMSSentTime = currentAliveMillis;
+    aliveMessageSentOnce = true;
+  } else if (currentAliveMillis - lastAliveSMSSentTime >= aliveSMSInterval) {
+    sendAliveMessage();  
     lastAliveSMSSentTime = currentAliveMillis;
   }
-
+  
+  processing = false;
+  updateOLED();
   delay(1000);
 
 }
@@ -237,17 +240,11 @@ void sendSMS(String message) {
   }
 }
 
-void sendAliveSMS() {
-  String message = "FACP - Transmitter is alive ";
-  Serial.println("[HEARTBEAT SMS] Sending alive message");
+void sendAliveMessage() {
+  String message = "1";
+  Serial.println("[HEARTBEAT MESAAGE] Sending alive message");
 
-  gsm_send_serial("AT+CMGF=1", 1000); // Text mode
-  gsm_send_serial("AT+CSCS=\"GSM\"", 500); // Use GSM charset
-
-  String cmd = String("AT+CMGS=\"") + ReceiverPanelAlive + "\"";
-  gsm_send_serial(cmd, 1000);
-  gsm_send_serial(message + "\x1A", 5000); // Send message with Ctrl+Z
-
+  publishToMQTT("dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/TRANSMITTER_ALIVE_STATUS", message);
 }
 
 

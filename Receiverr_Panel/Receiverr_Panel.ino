@@ -100,7 +100,10 @@ void mqttCallback(char* topic, String payload, unsigned int len) {
   } else if (topicStr.endsWith("/FAULT_ALARM")) {
     SerialMon.println("Received a FAULT ALARM SIGNAL!");
     handleFaultAlarm(payload);
-  } else {
+  } else if (topicStr.endsWith("/TRANSMITTER_ALIVE_STATUS")) {
+    SerialMon.println("Received a TX ALIVE SIGNAL!");
+    handleAliveSignal(payload);
+  }else {
     SerialMon.println("Unknown topic type.");
   }
 }
@@ -275,13 +278,7 @@ void handleSMS(String message) {
     faultActive = false;
     lastTransmitterAliveTime = millis();
     transmitterDeadShown = false;
-  }else if (message.indexOf("transmitter is alive") != -1) {
-    Serial.println("[SMS Action] TRANSMITTER ALIVE RECEIVED");
-    digitalWrite(R4, LOW);
-    lastTransmitterAliveTime = millis();
-    transmitterDeadShown = false; // Reset flag to allow showing again if needed
   }
-
 }
 
 void checkTransmitterAlive() {
@@ -392,8 +389,9 @@ void handleFireAlarm(String payload) {
     digitalWrite(R0, LOW);
     digitalWrite(R1, LOW);   
   }
-   
-   }
+  lastTransmitterAliveTime = millis();
+  transmitterDeadShown = false;
+}
 
 void handleFaultAlarm(String payload) {
   int state = payload.toInt();
@@ -414,6 +412,21 @@ void handleFaultAlarm(String payload) {
     digitalWrite(R2, LOW);
     digitalWrite(R3, LOW); 
     faultActive = false;  
+  }
+  lastTransmitterAliveTime = millis();
+  transmitterDeadShown = false;
+}
+
+void handleAliveSignal(String payload) {
+  int state = payload.toInt();
+  SerialMon.print("ALIVE_STATUS ");
+  SerialMon.println(state);
+
+  if(state){
+    Serial.println("TRANSMITTER ALIVE RECEIVED");
+    digitalWrite(R4, LOW);
+    lastTransmitterAliveTime = millis();
+    transmitterDeadShown = false; // Reset flag to allow showing again if needed
   }
 }
 
@@ -483,6 +496,7 @@ void connectToMQTT(void) {
   // Subscribe to both topics
   String topic1 = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/FIRE_ALARM";
   String topic2 = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/FAULT_ALARM";
+  String topic3 = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/TRANSMITTER_ALIVE_STATUS";
   
   String sub1 = "AT+QMTSUB=0,0,\"" + topic1 + "\",0";
   gsm_send_serial(sub1, 1000);
@@ -490,6 +504,10 @@ void connectToMQTT(void) {
 
   String sub2 = "AT+QMTSUB=0,1,\"" + topic2 + "\",0";
   gsm_send_serial(sub2, 1000);
+  delay(1000);
+
+  String sub3 = "AT+QMTSUB=0,2,\"" + topic3 + "\",0";
+  gsm_send_serial(sub3, 1000);
   delay(2000);
 
   // Debug: Print MQTT connection status
