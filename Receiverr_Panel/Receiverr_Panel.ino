@@ -56,13 +56,10 @@ unsigned long lastDebounceTime = 0;
 bool lastStableState =  LOW;
 bool currentState    =  LOW;
 
-bool silenceButtonPressed = false;
-bool lastSilenceButtonState = HIGH;
+volatile bool d1InterruptTriggered = false;
 unsigned long d1ActiveStartTime = 0;
-unsigned long lastSilenceDebounceTime = 0;
-const unsigned long silenceDebounceDelay = 50;
-const unsigned long silenceHoldTime = 2000;     // 2 seconds
-const unsigned long rebootHoldTime = 10000;     // 10 seconds
+bool d1CurrentlyHeld = false;
+bool bellSilenced = false;
 
 bool faultActive = false;
 unsigned long lastBuzzerToggleTime = 0;
@@ -85,6 +82,10 @@ bool transmitterDeadShown = false;
 
 String MQTTconnection = "";
 String GPRSconnection = "";
+
+void IRAM_ATTR onD1FallingEdge() {
+  d1InterruptTriggered = true;
+}
 
 
 void mqttCallback(char* topic, String payload, unsigned int len) {
@@ -130,6 +131,8 @@ void setup() {
   pinMode(R4, OUTPUT);
   pinMode(R5, OUTPUT);
 
+  attachInterrupt(digitalPinToInterrupt(D1), onD1FallingEdge, FALLING);
+
   digitalWrite(R0, LOW);digitalWrite(R1, LOW);digitalWrite(R2, LOW);digitalWrite(R3, LOW);digitalWrite(R4, LOW);
 
   Wire.begin(I2C_SDA,I2C_SCL);
@@ -161,6 +164,8 @@ void loop() {
   }
   
 }
+
+
 
 void readInputsAndCheckAlarms() {
   unsigned long now = millis();
@@ -292,44 +297,36 @@ void checkTransmitterAlive() {
 
 
 void checkSilenceButton() {
-  bool reading = digitalRead(D1);
+  if (d1InterruptTriggered) {
+    if (!d1CurrentlyHeld) {
+      d1ActiveStartTime = millis();
+      d1CurrentlyHeld = true;
+      bellSilenced = false;
+    }
 
-  // Debounce logic (optional for noisy inputs)
-  if (reading != lastSilenceButtonState) {
-    lastSilenceDebounceTime = millis();
-    lastSilenceButtonState = reading;
-  }
-
-  if ((millis() - lastSilenceDebounceTime) > silenceDebounceDelay) {
-    if (reading == LOW) {
-      // Start timer if not already running
-      if (d1ActiveStartTime == 0) {
-        d1ActiveStartTime = millis();
-      }
-
+    if (digitalRead(D1) == LOW) {
       unsigned long heldDuration = millis() - d1ActiveStartTime;
 
-      // Silence bell after 2 seconds
-      if (!silenceButtonPressed && heldDuration >= silenceHoldTime) {
+      if (!bellSilenced && heldDuration >= 2000) {
         Serial.println("[ACTION] D1 held 2s. Silencing bell.");
         digitalWrite(R1, LOW); // Turn off Local Bell
-        faultActive = false;  // Turn off Buzzer
-        silenceButtonPressed = true;
+        faultActive = false;   // Stop buzzer if needed
+        bellSilenced = true;
       }
 
-      // Reboot after 10 seconds
-      if (heldDuration >= rebootHoldTime) {
+      if (heldDuration >= 10000) {
         Serial.println("[REBOOT] D1 held >10s. Rebooting...");
-        ESP.restart();  
+        ESP.restart();
       }
-
     } else {
-      // Reset when input released
-      d1ActiveStartTime = 0;
-      silenceButtonPressed = false;
+      // Button released
+      d1InterruptTriggered = false;
+      d1CurrentlyHeld = false;
+      bellSilenced = false;
     }
   }
 }
+
 
 void maintainMQTTConnection() {
   String status = gsm_send_serial("AT+QMTCONN?", 1000);
@@ -431,7 +428,11 @@ void handleAliveSignal(String payload) {
 }
 
 void handleBuzzerPulse() {
-  if (!faultActive) return;
+  if (!faultActive) {
+    digitalWrite(R3, LOW);  // Make sure buzzer is off
+    buzzerState = false;
+    return;
+  }
 
   unsigned long now = millis();
   unsigned long interval = buzzerState ? buzzerOnTime : buzzerOffTime;
@@ -442,7 +443,6 @@ void handleBuzzerPulse() {
     lastBuzzerToggleTime = now;
   }
 }
-
 
 void Init(void) {                        // Connecting with the network and GPRS
   delay(5000);
