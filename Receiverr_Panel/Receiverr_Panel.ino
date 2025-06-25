@@ -67,7 +67,6 @@ bool buzzerState = false;
 const unsigned long buzzerOnTime = 1000;   // 1 second ON
 const unsigned long buzzerOffTime = 5000;  // 5 seconds OFF
 
-
 String lastReceivedMessage = "";
 unsigned long lastDisplayUpdate = 0;
 const unsigned long displayInterval = 1000;  
@@ -82,6 +81,12 @@ bool transmitterDeadShown = false;
 
 String MQTTconnection = "";
 String GPRSconnection = "";
+
+bool TX_Fault = false;
+bool Tx_Main_Fails = false;
+bool Rx_Main_Fails = false;
+bool Buzzersilence[3] = {false,false,false};
+bool ActivatedBuzzerInput[3] = {false,false,false};
 
 void IRAM_ATTR onD1FallingEdge() {
   unsigned long now = millis();
@@ -104,7 +109,11 @@ void mqttCallback(char* topic, String payload, unsigned int len) {
   } else if (topicStr.endsWith("/FAULT_ALARM")) {
     SerialMon.println("Received a FAULT ALARM SIGNAL!");
     handleFaultAlarm(payload);
-  } else if (topicStr.endsWith("/TRANSMITTER_ALIVE_STATUS")) {
+  } else if (topicStr.endsWith("/MAINS_FAIL_ALARM")) {
+    SerialMon.println("Received a MAINS POWER FAILS ALARM SIGNAL!");
+    handleMainFailsAlarm(payload);
+  }
+  else if (topicStr.endsWith("/TRANSMITTER_ALIVE_STATUS")) {
     SerialMon.println("Received a TX ALIVE SIGNAL!");
     handleAliveSignal(payload);
   }else {
@@ -149,6 +158,23 @@ void setup() {
   Init();
   connectToGPRS();
   connectToMQTT();
+
+  xTaskCreatePinnedToCore(
+    Buzzer_task,
+    "Buzzer_task",
+    10000,
+    NULL,
+    0,   //piority
+    NULL,
+    0  // Core 0
+  );
+  
+}
+
+void Buzzer_task(void *parameter){
+   for (;;) {
+        handleBuzzerPulse();
+   }
 }
 
 void loop() {
@@ -156,7 +182,6 @@ void loop() {
   checkForMessage();
   readInputsAndCheckAlarms();
   checkSilenceButton(); 
-  handleBuzzerPulse();
   checkTransmitterAlive();
   isGPRSConnected();
   maintainMQTTConnection();
@@ -201,8 +226,8 @@ void handleAlarmStateChange(bool status) {
   topic = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/RECEIVE_MAINS_FAIL_ALARM";
   Serial.println(status ? "[ALARM] MAINS Fail" : "[NORMAL] MAINS OK");
   
-
   publishToMQTT(topic, payload);
+  handleRXMainFailsAlarm(payload);
 
 }
 
@@ -274,20 +299,56 @@ void handleSMS(String message) {
   else if (message.indexOf("fault reported") != -1) {
     Serial.println("[SMS Action] FAULT ON");
     digitalWrite(R2, HIGH);
-    faultActive = true;
-    lastBuzzerToggleTime = millis();
-    buzzerState = false;
-    digitalWrite(R3, LOW); // Start from OFF
+    TX_Fault = true;
+    if(!Buzzersilence[0]){
+         faultActive = true;
+         lastBuzzerToggleTime = millis();
+         buzzerState = false;
+         digitalWrite(R3, LOW); // Start from OFF
+         ActivatedBuzzerInput[0] = true;
+    }
     lastTransmitterAliveTime = millis();
     transmitterDeadShown = false;
   }
   else if (message.indexOf("fault cleared") != -1) {
     Serial.println("[SMS Action] FAULT OFF");
-    digitalWrite(R2, LOW);
+    TX_Fault = false;
+    if((!TX_Fault)&&(!Tx_Main_Fails)&&(!Rx_Main_Fails)){
+        digitalWrite(R2, LOW);
+    }
+    Buzzersilence[0] = false;
     digitalWrite(R3, LOW);
     faultActive = false;
     lastTransmitterAliveTime = millis();
     transmitterDeadShown = false;
+    ActivatedBuzzerInput[0] = false;
+  }
+  else if (message.indexOf("mains power fail reported") != -1) {
+    Serial.println("[SMS Action] MAINS FAIL ON");
+    digitalWrite(R2, HIGH);
+    Tx_Main_Fails = true;
+    if(!Buzzersilence[1]){
+         faultActive = true;
+         lastBuzzerToggleTime = millis();
+         buzzerState = false;
+         digitalWrite(R3, LOW); // Start from OFF
+         ActivatedBuzzerInput[1] = true;
+    }
+    lastTransmitterAliveTime = millis();
+    transmitterDeadShown = false;
+  }
+  else if (message.indexOf("mains power fail cleared") != -1) {
+    Serial.println("[SMS Action] MAINS FAIL OFF");
+    Tx_Main_Fails = false;
+    if((!TX_Fault)&&(!Tx_Main_Fails)&&(!Rx_Main_Fails)){
+        digitalWrite(R2, LOW);
+    }
+    Buzzersilence[1] = false;
+    digitalWrite(R3, LOW);
+    faultActive = false;
+    lastTransmitterAliveTime = millis();
+    transmitterDeadShown = false;
+    ActivatedBuzzerInput[1] = false;
   }
 }
 
@@ -307,8 +368,13 @@ void checkSilenceButton() {
 
     Serial.println("[INTERRUPT] D1 pressed. Silencing bell.");
     digitalWrite(R1, LOW);   // Turn off Local Bell
+    digitalWrite(R3, LOW);
     faultActive = false;     // Stop buzzer pulse if any
     SilenceEnabled = true;
+    if(ActivatedBuzzerInput[0])Buzzersilence[0] = true;
+    if(ActivatedBuzzerInput[1])Buzzersilence[1] = true;
+    if(ActivatedBuzzerInput[2])Buzzersilence[2] = true;
+    
   }
 }
 
@@ -387,16 +453,91 @@ void handleFaultAlarm(String payload) {
     SerialMon.println("Fault reported at Cooling Plant");
     lastReceivedMessage = "FACP - Fault reported at Cooling Plant";
     digitalWrite(R2, HIGH);
-    faultActive = true;         // Enable pulsing
-    lastBuzzerToggleTime = millis();  // Reset buzzer timer
-    buzzerState = false;
-    digitalWrite(R3, LOW);      // Start from buzzer OFF
+    TX_Fault = true;
+    if(!Buzzersilence[0]){
+         faultActive = true;
+         lastBuzzerToggleTime = millis();
+         buzzerState = false;
+         digitalWrite(R3, LOW); // Start from OFF
+         ActivatedBuzzerInput[0] = true;
+    }
   }else{
     SerialMon.println("Fault cleared at Cooling Plant");
     lastReceivedMessage = "FACP - Fault cleared at Cooling Plant";
-    digitalWrite(R2, LOW);
+    TX_Fault = false;
+    if((!TX_Fault)&&(!Tx_Main_Fails)&&(!Rx_Main_Fails)){
+        digitalWrite(R2, LOW);
+    }
+    Buzzersilence[0] = false;
     digitalWrite(R3, LOW); 
     faultActive = false;  
+    ActivatedBuzzerInput[0] = false;
+  }
+  lastTransmitterAliveTime = millis();
+  transmitterDeadShown = false;
+}
+
+void handleMainFailsAlarm(String payload) {
+  int state = payload.toInt();
+  SerialMon.print("MAIN_FAILS_ALARM STATE: ");
+  SerialMon.println(state);
+
+  if(state){
+    SerialMon.println("Main power fails reported at Cooling Plant");
+    lastReceivedMessage = "FACP - Main Power Fails reported at Cooling Plant";
+    digitalWrite(R2, HIGH);
+    Tx_Main_Fails = true;
+    if(!Buzzersilence[1]){
+         faultActive = true;
+         lastBuzzerToggleTime = millis();
+         buzzerState = false;
+         digitalWrite(R3, LOW); // Start from OFF
+         ActivatedBuzzerInput[1] = true;
+    }
+  }else{
+    SerialMon.println("Main power fails cleared at Cooling Plant");
+    lastReceivedMessage = "FACP - Main Power Fails cleared at Cooling Plant";
+    Tx_Main_Fails = false;
+    if((!TX_Fault)&&(!Tx_Main_Fails)&&(!Rx_Main_Fails)){
+        digitalWrite(R2, LOW);
+    }
+    Buzzersilence[1] = false;
+    digitalWrite(R3, LOW); 
+    faultActive = false;  
+    ActivatedBuzzerInput[1] = false;
+  }
+  lastTransmitterAliveTime = millis();
+  transmitterDeadShown = false;
+}
+
+void handleRXMainFailsAlarm(String payload) {
+  int state = payload.toInt();
+  SerialMon.print("RX_MAIN_FAILS_ALARM STATE: ");
+  SerialMon.println(state);
+
+  if(state){
+    SerialMon.println("Receiver Main power fails reported at Cooling Plant");
+    lastReceivedMessage = "FACP - Receiver Main Power Fails reported at Cooling Plant";
+    digitalWrite(R2, HIGH);
+    Rx_Main_Fails = true;
+    if(!Buzzersilence[2]){
+         faultActive = true;
+         lastBuzzerToggleTime = millis();
+         buzzerState = false;
+         digitalWrite(R3, LOW); // Start from OFF
+         ActivatedBuzzerInput[2] = true;
+    }
+  }else{
+    SerialMon.println("Receiver Main power fails cleared at Cooling Plant");
+    lastReceivedMessage = "FACP - Receiver Main Power Fails cleared at Cooling Plant";
+    Rx_Main_Fails = false;
+    if((!TX_Fault)&&(!Tx_Main_Fails)&&(!Rx_Main_Fails)){
+        digitalWrite(R2, LOW);
+    }
+    Buzzersilence[2] = false;
+    digitalWrite(R3, LOW); 
+    faultActive = false;  
+    ActivatedBuzzerInput[2] = false;
   }
   lastTransmitterAliveTime = millis();
   transmitterDeadShown = false;
@@ -484,7 +625,8 @@ void connectToMQTT(void) {
   // Subscribe to both topics
   String topic1 = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/FIRE_ALARM";
   String topic2 = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/FAULT_ALARM";
-  String topic3 = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/TRANSMITTER_ALIVE_STATUS";
+  String topic3 = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/MAINS_FAIL_ALARM";
+  String topic4 = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/TRANSMITTER_ALIVE_STATUS";
   
   String sub1 = "AT+QMTSUB=0,0,\"" + topic1 + "\",0";
   gsm_send_serial(sub1, 1000);
@@ -496,6 +638,10 @@ void connectToMQTT(void) {
 
   String sub3 = "AT+QMTSUB=0,2,\"" + topic3 + "\",0";
   gsm_send_serial(sub3, 1000);
+  delay(1000);
+
+  String sub4 = "AT+QMTSUB=0,3,\"" + topic4 + "\",0";
+  gsm_send_serial(sub4, 1000);
   delay(2000);
 
   // Debug: Print MQTT connection status
