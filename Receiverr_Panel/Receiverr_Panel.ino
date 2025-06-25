@@ -57,9 +57,9 @@ bool lastStableState =  LOW;
 bool currentState    =  LOW;
 
 volatile bool d1InterruptTriggered = false;
-unsigned long d1ActiveStartTime = 0;
-bool d1CurrentlyHeld = false;
-bool bellSilenced = false;
+unsigned long lastD1InterruptTime = 0;
+const unsigned long debounceDelay = 100;  // 100 ms debounce
+bool SilenceEnabled = false;
 
 bool faultActive = false;
 unsigned long lastBuzzerToggleTime = 0;
@@ -84,9 +84,12 @@ String MQTTconnection = "";
 String GPRSconnection = "";
 
 void IRAM_ATTR onD1FallingEdge() {
-  d1InterruptTriggered = true;
+  unsigned long now = millis();
+  if (now - lastD1InterruptTime > debounceDelay) {
+    d1InterruptTriggered = true;
+    lastD1InterruptTime = now;
+  }
 }
-
 
 void mqttCallback(char* topic, String payload, unsigned int len) {
   SerialMon.print("Message arrived [");
@@ -164,8 +167,6 @@ void loop() {
   }
   
 }
-
-
 
 void readInputsAndCheckAlarms() {
   unsigned long now = millis();
@@ -255,7 +256,10 @@ void handleSMS(String message) {
   if (message.indexOf("fire alarm activated") != -1) {
     Serial.println("[SMS Action] FIRE ALARM ON");
     digitalWrite(R0, HIGH);
-    digitalWrite(R1, HIGH);
+    if(!SilenceEnabled){
+      digitalWrite(R1, HIGH);
+      Serial.println("LOCAL BELL ON");
+    }
     lastTransmitterAliveTime = millis();
     transmitterDeadShown = false;
   }
@@ -263,6 +267,7 @@ void handleSMS(String message) {
     Serial.println("[SMS Action] FIRE ALARM OFF");
     digitalWrite(R0, LOW);
     digitalWrite(R1, LOW);
+    SilenceEnabled = false;
     lastTransmitterAliveTime = millis();
     transmitterDeadShown = false;
   }
@@ -298,35 +303,14 @@ void checkTransmitterAlive() {
 
 void checkSilenceButton() {
   if (d1InterruptTriggered) {
-    if (!d1CurrentlyHeld) {
-      d1ActiveStartTime = millis();
-      d1CurrentlyHeld = true;
-      bellSilenced = false;
-    }
+    d1InterruptTriggered = false;
 
-    if (digitalRead(D1) == LOW) {
-      unsigned long heldDuration = millis() - d1ActiveStartTime;
-
-      if (!bellSilenced && heldDuration >= 2000) {
-        Serial.println("[ACTION] D1 held 2s. Silencing bell.");
-        digitalWrite(R1, LOW); // Turn off Local Bell
-        faultActive = false;   // Stop buzzer if needed
-        bellSilenced = true;
-      }
-
-      if (heldDuration >= 10000) {
-        Serial.println("[REBOOT] D1 held >10s. Rebooting...");
-        ESP.restart();
-      }
-    } else {
-      // Button released
-      d1InterruptTriggered = false;
-      d1CurrentlyHeld = false;
-      bellSilenced = false;
-    }
+    Serial.println("[INTERRUPT] D1 pressed. Silencing bell.");
+    digitalWrite(R1, LOW);   // Turn off Local Bell
+    faultActive = false;     // Stop buzzer pulse if any
+    SilenceEnabled = true;
   }
 }
-
 
 void maintainMQTTConnection() {
   String status = gsm_send_serial("AT+QMTCONN?", 1000);
@@ -379,12 +363,16 @@ void handleFireAlarm(String payload) {
     SerialMon.println("Fire Alarm Activated at Cooling Plant");
     lastReceivedMessage = "FACP - Fire Alarm Activated at Cooling Plant";
     digitalWrite(R0, HIGH);
-    digitalWrite(R1, HIGH);
+    if(!SilenceEnabled){
+        digitalWrite(R1, HIGH);
+         Serial.println("LOCAL BELL ON");
+    }
   }else{
     SerialMon.println("Fire Alarm Cleared at Cooling Plant");
     lastReceivedMessage = "FACP - Fire Alarm CLEARED at Cooling Plant";
     digitalWrite(R0, LOW);
-    digitalWrite(R1, LOW);   
+    digitalWrite(R1, LOW);
+    SilenceEnabled = false;    
   }
   lastTransmitterAliveTime = millis();
   transmitterDeadShown = false;
