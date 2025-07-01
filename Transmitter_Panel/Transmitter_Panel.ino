@@ -5,10 +5,12 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_ADS1X15.h>
+#include <Update.h>
 #include "Secret.h" // Include file to get the username and password of MQTT server
 #include "Configurations.h"
 #include "Message_Content.h"
 #include "datacake.h"
+#include "github.h"
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
@@ -61,6 +63,7 @@ bool lastStableState[3] = {HIGH, LOW, LOW};
 bool currentState[3] = {HIGH, LOW, LOW};
 bool processing = false;
 
+String firmware_url = "https://raw.githubusercontent.com/IndustrialArduino/NSD-FACP-Updates/release/Transmitter_Panel.bin";
 
 unsigned long lastAliveSMSSentTime = 0;
 const unsigned long aliveSMSInterval = 1800000; // 30 minutes in milliseconds
@@ -113,6 +116,7 @@ void loop() {
   processing = true;
 
   readInputsAndCheckAlarms();
+  checkForMessage();
   isGPRSConnected();
   maintainMQTTConnection();
 
@@ -125,14 +129,14 @@ void loop() {
 
   unsigned long currentAliveMillis = millis();
   if (!aliveMessageSentOnce) {
-    sendAliveMessage();  
+    // sendAliveMessage();
     lastAliveSMSSentTime = currentAliveMillis;
     aliveMessageSentOnce = true;
   } else if (currentAliveMillis - lastAliveSMSSentTime >= aliveSMSInterval) {
-    sendAliveMessage();  
+    //sendAliveMessage();
     lastAliveSMSSentTime = currentAliveMillis;
   }
-  
+
   processing = false;
   updateOLED();
   delay(1000);
@@ -157,7 +161,7 @@ void sendMQTTStatusUpdate() {
 
   Serial.println("[STATUS] Periodic MQTT status sent: FIRE=" + String(fireStatus) +
                  ", FAULT=" + String(faultStatus) + ", MAINS=" + String(mainsStatus));
-                 
+
 }
 
 
@@ -239,6 +243,41 @@ void sendSMS(String message) {
     gsm_send_serial(message + "\x1A", 5000); // Send message with Ctrl+Z
   }
 }
+
+void checkForMessage() {
+  String response = gsm_send_serial("AT+CMGL=\"REC UNREAD\"", 2000); // List unread messages
+}
+
+void handleSMSLine(String metaLine) {
+  int indexEnd = metaLine.indexOf("\n");
+  int bodyStart = indexEnd + 1;
+  String messageBody = "";
+
+  if (SerialAT.available()) {
+    messageBody = SerialAT.readStringUntil('\r');
+    messageBody.trim();
+  }
+
+  // Extract SMS index
+  int smsIndex = metaLine.substring(6, metaLine.indexOf(',', 6)).toInt();
+
+  Serial.println("[SMS] Received: " + messageBody);
+  handleSMS(messageBody);
+
+  // Delete processed message
+  gsm_send_serial("AT+CMGD=" + String(smsIndex), 1000);
+}
+
+void handleSMS(String message) {
+  message.trim();
+  message.toLowerCase();
+
+  if (message.indexOf("update the transmitter panel") != -1) {
+    Serial.println("[SMS Action] OTA UPDATE");
+    performOTA();
+  }
+}
+
 
 void sendAliveMessage() {
   String message = "1";
@@ -364,6 +403,8 @@ void Init(void) {                        // Connecting with the network and GPRS
   gsm_send_serial("AT+CGACT=1,1", 1000);
   gsm_send_serial("AT+CGATT?", 1000);
   gsm_send_serial("AT+CGPADDR=1", 500);
+  gsm_send_serial("AT+CMGF=1", 1000); // Set SMS to text mode
+  gsm_send_serial("AT+CNMI=2,1,0,0,0", 1000); // Immediate notification when SMS is received
 }
 
 void connectToGPRS(void) {
@@ -453,6 +494,262 @@ int getGSMSignalStrength() {
   return rssi;
 }
 
+void performOTA() {
+  int cert_length = root_ca.length();
+  String ca_cert = "AT+QFUPL=\"RAM:github_ca.pem\"," + String(cert_length) + ",100";
+  gsm_send_serial(ca_cert, 1000);
+  delay(1000);
+  gsm_send_serial(root_ca, 1000);
+  delay(1000);
+  gsm_send_serial("AT+QHTTPCFG=\"contextid\",1", 1000);
+  gsm_send_serial("AT+QHTTPCFG=\"responseheader\",1", 1000);
+  gsm_send_serial("AT+QHTTPCFG=\"sslctxid\",1", 1000);
+  gsm_send_serial("AT+QSSLCFG=\"sslversion\",1,4", 1000);
+  gsm_send_serial("AT+QSSLCFG=\"ciphersuite\",1,0xC02F", 1000);
+  gsm_send_serial("AT+QSSLCFG=\"seclevel\",1,1", 1000);
+  gsm_send_serial("AT+QSSLCFG=\"sni\",1,1", 1000);
+  gsm_send_serial("AT+QSSLCFG=\"cacert\",1,\"RAM:github_ca.pem\"", 1000);
+
+  gsm_send_serial("AT+QHTTPURL=" + String(firmware_url.length()) + ",80", 1000);
+  delay(100);
+  gsm_send_serial(firmware_url, 2000);
+
+  gsm_send_serial("AT+QHTTPGET=80", 1000);
+  Serial.println("[OTA] Waiting for +QHTTPGET response...");
+
+
+  long contentLength = -1;
+  unsigned long timeout = millis();
+  while (millis() - timeout < 5000) {
+    if (SerialAT.available()) {
+      String line = SerialAT.readStringUntil('\n');
+      line.trim();
+      if (line.length() == 0) continue;
+      Serial.println("[Modem Line] " + line);
+      if (line.startsWith("+QHTTPGET:")) {
+        int firstComma = line.indexOf(',');
+        int secondComma = line.indexOf(',', firstComma + 1);
+        if (firstComma != -1 && secondComma != -1) {
+          String lenStr = line.substring(secondComma + 1);
+          contentLength = lenStr.toInt();
+          Serial.print("[OTA] Content-Length: ");
+          Serial.println(contentLength);
+        }
+      }
+      if (line == "OK") break;
+    }
+    delay(10);
+  }
+
+  Serial.println("[OTA] HTTPS GET sent");
+
+  // Save response to RAM file
+  gsm_send_serial("AT+QHTTPREADFILE=\"RAM:firmware.bin\",80", 1000);
+
+  // Wait for final confirmation and avoid overlap
+  unsigned long readfileTimeout = millis();
+  while (millis() - readfileTimeout < 5000) {
+    if (SerialAT.available()) {
+      String line = SerialAT.readStringUntil('\n');
+      line.trim();
+      if (line.length() == 0) continue;
+      Serial.println("[READFILE] " + line);
+      if (line.startsWith("+QHTTPREADFILE:")) break;
+    }
+    delay(10);
+  }
+
+  // Clear SerialAT buffer
+  while (SerialAT.available()) SerialAT.read();
+
+  // Send QFLST directly
+  SerialAT.println("AT+QFLST=\"RAM:firmware.bin\"");
+
+  long ramFileSize = 0;
+  timeout = millis();
+  while (millis() - timeout < 5000) {
+    if (SerialAT.available()) {
+      String line = SerialAT.readStringUntil('\n');
+      line.trim();
+      if (line.length() == 0) continue;
+
+      Serial.println("[OTA Raw] " + line);
+
+      // Find +QFLST line
+      if (line.startsWith("+QFLST:")) {
+        int commaIdx = line.lastIndexOf(',');
+        if (commaIdx != -1) {
+          String sizeStr = line.substring(commaIdx + 1);
+          sizeStr.trim();
+          ramFileSize = sizeStr.toInt();
+          break;
+        }
+      }
+    }
+    delay(10);
+  }
+
+  Serial.println("[OTA] File size: " + String(ramFileSize));
+
+  if (ramFileSize <= 0) {
+    Serial.println("[OTA] ERROR: Invalid file size.");
+    return;
+  }
+
+
+
+  int headerSize = ramFileSize - contentLength;
+  if (headerSize <= 0 || headerSize > ramFileSize) {
+    Serial.println("[OTA] Invalid header size!");
+    return;
+  }
+  Serial.println("[OTA] Header size: " + String(headerSize));
+
+  // Clear SerialAT buffer before command
+  while (SerialAT.available()) SerialAT.read();
+
+  // Send QFOPEN directly
+  SerialAT.println("AT+QFOPEN=\"RAM:firmware.bin\",0");
+
+  int fileHandle = -1;
+  unsigned long handleTimeout = millis();
+
+  while (millis() - handleTimeout < 5000) {
+    if (SerialAT.available()) {
+      String line = SerialAT.readStringUntil('\n');
+      line.trim();
+      if (line.length() == 0) continue;
+
+      Serial.println("[OTA Raw] " + line);
+
+      if (line.startsWith("+QFOPEN:")) {
+        String handleStr = line.substring(line.indexOf(":") + 1);
+        handleStr.trim();
+        fileHandle = handleStr.toInt();
+        break;
+      }
+    }
+    delay(10);
+  }
+
+  Serial.println("[OTA] File handle: " + String(fileHandle));
+
+  if (fileHandle <= 0) {
+    Serial.println("[OTA] ERROR: Invalid file handle.");
+    return;
+  }
+
+  // Seek to payload
+  gsm_send_serial("AT+QFSEEK=" + String(fileHandle) + "," + String(headerSize) + ",0", 1000);
+  delay(300);
+  // Step 7: Begin OTA
+  if (!Update.begin(contentLength)) {
+    Serial.println("[OTA] Update.begin failed");
+    return;
+  }
+
+  Serial.println("[OTA] Start writing...");
+
+
+  size_t chunkSize = 1024;
+  size_t totalWritten = 0;
+  uint8_t buffer[1024];
+
+  while (totalWritten < contentLength) {
+    size_t bytesToRead = min(chunkSize, (size_t)(contentLength - totalWritten));
+    SerialAT.println("AT+QFREAD=" + String(fileHandle) + "," + String(bytesToRead));
+
+    // Wait for CONNECT (start of binary data)
+    bool gotConnect = false;
+    unsigned long startWait = millis();
+    while (millis() - startWait < 2000) {
+      if (SerialAT.available()) {
+        String line = SerialAT.readStringUntil('\n');
+        line.trim();
+        if (line.startsWith("CONNECT")) {
+          gotConnect = true;
+          break;
+        }
+      }
+      delay(1);
+    }
+    if (!gotConnect) {
+      Serial.println("[OTA] Failed to get CONNECT");
+      Update.abort();
+      return;
+    }
+
+    // Read exactly bytesToRead bytes of binary data
+    size_t readCount = 0;
+    unsigned long lastReadTime = millis();
+    while (readCount < bytesToRead && millis() - lastReadTime < 3000) {
+      if (SerialAT.available()) {
+        buffer[readCount++] = (uint8_t)SerialAT.read();
+        lastReadTime = millis();
+      } else {
+        delay(1);
+      }
+    }
+    if (readCount != bytesToRead) {
+      Serial.println("[OTA] Incomplete read from modem");
+      Update.abort();
+      return;
+    }
+
+    // After reading data, wait for the final OK
+    bool gotOK = false;
+    startWait = millis();
+    while (millis() - startWait < 2000) {
+      if (SerialAT.available()) {
+        String line = SerialAT.readStringUntil('\n');
+        line.trim();
+        if (line == "OK") {
+          gotOK = true;
+          break;
+        }
+      }
+      delay(1);
+    }
+    if (!gotOK) {
+      Serial.println("[OTA] Did not receive final OK after data");
+      Update.abort();
+      return;
+    }
+
+    // Write to flash
+    size_t written = Update.write(buffer, readCount);
+    if (written != readCount) {
+      Serial.println("[OTA] Flash write mismatch");
+      Update.abort();
+      return;
+    }
+
+    totalWritten += written;
+    Serial.printf("\r[OTA] Progress: %u / %u bytes", (unsigned)totalWritten, (unsigned)contentLength);
+  }
+
+  Serial.println("\n[OTA] Firmware write complete.");
+
+  // Close the file
+  SerialAT.println("AT+QFCLOSE=" + String(fileHandle));
+  delay(500);
+
+  // Finalize OTA update
+  if (Update.end()) {
+    Serial.println("[OTA] Update successful!");
+    if (Update.isFinished()) {
+      sendSMS("FACP-Transmitter Panel Updated Successfully");
+      delay(300);
+      Serial.println("[OTA] Rebooting...");
+      delay(300);
+      ESP.restart();
+    } else {
+      Serial.println("[OTA] Update not finished!");
+    }
+  } else {
+    Serial.println("[OTA] Update failed with error: " + String(Update.getError()));
+  }
+}
 
 bool isNetworkConnected() {
   String response = gsm_send_serial("AT+CREG?", 3000);
@@ -478,8 +775,24 @@ String gsm_send_serial(String command, int timeout) {
 
   while (millis() - startMillis < timeout) {
     while (SerialAT.available()) {
-      char c = SerialAT.read();
-      buff_resp += c;
+      //      char c = SerialAT.read();
+      //      buff_resp += c;
+      //    }
+      String line = SerialAT.readStringUntil('\n');
+      line.trim();
+
+      if (line.length() == 0) continue;
+
+      Serial.println("[Modem Line] " + line);
+
+      // Handle SMS lines
+      if (line.startsWith("+CMGL:")) {
+        handleSMSLine(line); // Extract and forward SMS
+        continue; // Do not append to buffer
+      }
+
+      // Accumulate only unhandled lines
+      buff_resp += line + "\n";
     }
     delay(10); // Small delay to allow for incoming data to accumulate
   }

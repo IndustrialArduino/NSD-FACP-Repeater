@@ -5,10 +5,12 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <Adafruit_ADS1X15.h>
+#include <Update.h>
 #include "Secret.h" // Include file to get the username and password of MQTT server
 #include "Configurations.h"
 #include "Message_Content.h"
-#include"datacake.h"
+#include "datacake.h"
+#include "github.h"
 
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
@@ -37,7 +39,7 @@ String MQTTport = "8883";
 
 #define D1 34 // Silence Bell
 #define D2 35 // Mains_Fails_Alarm_Input
-#define D3 14 
+#define D3 14
 #define D4 13
 #define D5 5
 #define R0 12  // RED Indicator
@@ -50,7 +52,7 @@ String MQTTport = "8883";
 bool RMSA_Status = false ;
 bool inputStatus = false; // FEA, FTA, MSA
 
-#define DEBOUNCE_DELAY 50 
+#define DEBOUNCE_DELAY 50
 //Debouncing and states
 unsigned long lastDebounceTime = 0;
 bool lastStableState =  LOW;
@@ -69,7 +71,7 @@ const unsigned long buzzerOffTime = 5000;  // 5 seconds OFF
 
 String lastReceivedMessage = "";
 unsigned long lastDisplayUpdate = 0;
-const unsigned long displayInterval = 1000;  
+const unsigned long displayInterval = 1000;
 
 unsigned long lastSignalCheckTime = 0;
 const unsigned long signalCheckInterval = 10UL * 60UL * 1000UL; // 10 minutes
@@ -85,8 +87,10 @@ String GPRSconnection = "";
 bool TX_Fault = false;
 bool Tx_Main_Fails = false;
 bool Rx_Main_Fails = false;
-bool Buzzersilence[3] = {false,false,false};
-bool ActivatedBuzzerInput[3] = {false,false,false};
+bool Buzzersilence[4] = {false, false, false};
+bool ActivatedBuzzerInput[4] = {false, false, false};
+
+String firmware_url = "https://raw.githubusercontent.com/IndustrialArduino/NSD-FACP-Updates/release/Receiver_Panel.bin";
 
 void IRAM_ATTR onD1FallingEdge() {
   unsigned long now = millis();
@@ -101,7 +105,7 @@ void mqttCallback(char* topic, String payload, unsigned int len) {
   SerialMon.print(topic);
   SerialMon.print("]: ");
   String topicStr = String(topic);
-   
+
   // Determine which type of alarm it is
   if (topicStr.endsWith("/FIRE_ALARM")) {
     SerialMon.println("Received a FIRE ALARM SIGNAL!");
@@ -116,7 +120,7 @@ void mqttCallback(char* topic, String payload, unsigned int len) {
   else if (topicStr.endsWith("/TRANSMITTER_ALIVE_STATUS")) {
     SerialMon.println("Received a TX ALIVE SIGNAL!");
     handleAliveSignal(payload);
-  }else {
+  } else {
     SerialMon.println("Unknown topic type.");
   }
 }
@@ -125,15 +129,16 @@ void setup() {
   // Set console baud rate
   Serial.begin(115200);
   delay(10);
-  SerialAT.begin(UART_BAUD, SERIAL_8N1, MODEM_RX, MODEM_TX);
+  SerialAT.begin(UART_BAUD, SERIAL_8N1, MODEM_RX, MODEM_TX, false, 2048);
+
 
   delay(2000);
   pinMode(GSM_RESET, OUTPUT);
   digitalWrite(GSM_RESET, HIGH);  // RS-485
   delay(2000);
-  
-  pinMode(D1, INPUT_PULLUP); 
-  pinMode(D2, INPUT_PULLUP); 
+
+  pinMode(D1, INPUT_PULLUP);
+  pinMode(D2, INPUT_PULLUP);
   pinMode(D4, INPUT);
   pinMode(D5, INPUT);
   pinMode(R0, OUTPUT);
@@ -145,13 +150,13 @@ void setup() {
 
   attachInterrupt(digitalPinToInterrupt(D1), onD1FallingEdge, FALLING);
 
-  digitalWrite(R0, LOW);digitalWrite(R1, LOW);digitalWrite(R2, LOW);digitalWrite(R3, LOW);digitalWrite(R4, LOW);
+  digitalWrite(R0, LOW); digitalWrite(R1, LOW); digitalWrite(R2, LOW); digitalWrite(R3, LOW); digitalWrite(R4, LOW);
 
-  Wire.begin(I2C_SDA,I2C_SCL);
+  Wire.begin(I2C_SDA, I2C_SCL);
 
-  if(!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3D for 128x64
+  if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) { // Address 0x3D for 128x64
     Serial.println(F("SSD1306 allocation failed"));
-    for(;;); // Don't proceed, loop forever
+    for (;;); // Don't proceed, loop forever
   }
   display.display();
   updateOLED();
@@ -168,49 +173,49 @@ void setup() {
     NULL,
     0  // Core 0
   );
-  
+
 }
 
-void Buzzer_task(void *parameter){
-   for (;;) {
-        handleBuzzerPulse();
-   }
+void Buzzer_task(void *parameter) {
+  for (;;) {
+    handleBuzzerPulse();
+  }
 }
 
 void loop() {
 
   checkForMessage();
   readInputsAndCheckAlarms();
-  checkSilenceButton(); 
+  checkSilenceButton();
   checkTransmitterAlive();
   isGPRSConnected();
   maintainMQTTConnection();
 
- if (millis() - lastDisplayUpdate > displayInterval) {
+  if (millis() - lastDisplayUpdate > displayInterval) {
     updateOLED();
     lastDisplayUpdate = millis();
   }
-  
+
 }
 
 void readInputsAndCheckAlarms() {
   unsigned long now = millis();
   currentState = digitalRead(D2);
 
-    if (currentState!= lastStableState) {
-      if ((now - lastDebounceTime) > DEBOUNCE_DELAY) {
-        lastDebounceTime = now;
-        lastStableState = currentState;
+  if (currentState != lastStableState) {
+    if ((now - lastDebounceTime) > DEBOUNCE_DELAY) {
+      lastDebounceTime = now;
+      lastStableState = currentState;
 
-        inputStatus = interpretAlarmStatus(currentState);
-        handleAlarmStateChange(inputStatus);
-      }
+      inputStatus = interpretAlarmStatus(currentState);
+      handleAlarmStateChange(inputStatus);
     }
+  }
 
 }
 
 bool interpretAlarmStatus( bool state) {
-    return state == HIGH;          //  Mains
+  return state == HIGH;          //  Mains
 }
 
 void handleAlarmStateChange(bool status) {
@@ -225,7 +230,7 @@ void handleAlarmStateChange(bool status) {
 
   topic = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/RECEIVE_MAINS_FAIL_ALARM";
   Serial.println(status ? "[ALARM] MAINS Fail" : "[NORMAL] MAINS OK");
-  
+
   publishToMQTT(topic, payload);
   handleRXMainFailsAlarm(payload);
 
@@ -281,31 +286,33 @@ void handleSMS(String message) {
   if (message.indexOf("fire alarm activated") != -1) {
     Serial.println("[SMS Action] FIRE ALARM ON");
     digitalWrite(R0, HIGH);
-    if(!SilenceEnabled){
+    if (!Buzzersilence[3]) {
       digitalWrite(R1, HIGH);
       Serial.println("LOCAL BELL ON");
+      ActivatedBuzzerInput[3] = true;
     }
     lastTransmitterAliveTime = millis();
     transmitterDeadShown = false;
   }
   else if (message.indexOf("fire alarm cleared") != -1) {
     Serial.println("[SMS Action] FIRE ALARM OFF");
+    Buzzersilence[3] = false;
     digitalWrite(R0, LOW);
     digitalWrite(R1, LOW);
-    SilenceEnabled = false;
     lastTransmitterAliveTime = millis();
     transmitterDeadShown = false;
+    ActivatedBuzzerInput[3] = false;
   }
   else if (message.indexOf("fault reported") != -1) {
     Serial.println("[SMS Action] FAULT ON");
     digitalWrite(R2, HIGH);
     TX_Fault = true;
-    if(!Buzzersilence[0]){
-         faultActive = true;
-         lastBuzzerToggleTime = millis();
-         buzzerState = false;
-         digitalWrite(R3, LOW); // Start from OFF
-         ActivatedBuzzerInput[0] = true;
+    if (!Buzzersilence[0]) {
+      faultActive = true;
+      lastBuzzerToggleTime = millis();
+      buzzerState = false;
+      digitalWrite(R3, LOW); // Start from OFF
+      ActivatedBuzzerInput[0] = true;
     }
     lastTransmitterAliveTime = millis();
     transmitterDeadShown = false;
@@ -313,8 +320,8 @@ void handleSMS(String message) {
   else if (message.indexOf("fault cleared") != -1) {
     Serial.println("[SMS Action] FAULT OFF");
     TX_Fault = false;
-    if((!TX_Fault)&&(!Tx_Main_Fails)&&(!Rx_Main_Fails)){
-        digitalWrite(R2, LOW);
+    if ((!TX_Fault) && (!Tx_Main_Fails) && (!Rx_Main_Fails)) {
+      digitalWrite(R2, LOW);
     }
     Buzzersilence[0] = false;
     digitalWrite(R3, LOW);
@@ -327,12 +334,12 @@ void handleSMS(String message) {
     Serial.println("[SMS Action] MAINS FAIL ON");
     digitalWrite(R2, HIGH);
     Tx_Main_Fails = true;
-    if(!Buzzersilence[1]){
-         faultActive = true;
-         lastBuzzerToggleTime = millis();
-         buzzerState = false;
-         digitalWrite(R3, LOW); // Start from OFF
-         ActivatedBuzzerInput[1] = true;
+    if (!Buzzersilence[1]) {
+      faultActive = true;
+      lastBuzzerToggleTime = millis();
+      buzzerState = false;
+      digitalWrite(R3, LOW); // Start from OFF
+      ActivatedBuzzerInput[1] = true;
     }
     lastTransmitterAliveTime = millis();
     transmitterDeadShown = false;
@@ -340,8 +347,8 @@ void handleSMS(String message) {
   else if (message.indexOf("mains power fail cleared") != -1) {
     Serial.println("[SMS Action] MAINS FAIL OFF");
     Tx_Main_Fails = false;
-    if((!TX_Fault)&&(!Tx_Main_Fails)&&(!Rx_Main_Fails)){
-        digitalWrite(R2, LOW);
+    if ((!TX_Fault) && (!Tx_Main_Fails) && (!Rx_Main_Fails)) {
+      digitalWrite(R2, LOW);
     }
     Buzzersilence[1] = false;
     digitalWrite(R3, LOW);
@@ -349,6 +356,10 @@ void handleSMS(String message) {
     lastTransmitterAliveTime = millis();
     transmitterDeadShown = false;
     ActivatedBuzzerInput[1] = false;
+  }
+  else if (message.indexOf("update the receiver panel") != -1) {
+    Serial.println("[SMS Action] OTA UPDATE");
+    performOTA();
   }
 }
 
@@ -370,11 +381,11 @@ void checkSilenceButton() {
     digitalWrite(R1, LOW);   // Turn off Local Bell
     digitalWrite(R3, LOW);
     faultActive = false;     // Stop buzzer pulse if any
-    SilenceEnabled = true;
-    if(ActivatedBuzzerInput[0])Buzzersilence[0] = true;
-    if(ActivatedBuzzerInput[1])Buzzersilence[1] = true;
-    if(ActivatedBuzzerInput[2])Buzzersilence[2] = true;
-    
+    if (ActivatedBuzzerInput[0])Buzzersilence[0] = true;
+    if (ActivatedBuzzerInput[1])Buzzersilence[1] = true;
+    if (ActivatedBuzzerInput[2])Buzzersilence[2] = true;
+    if (ActivatedBuzzerInput[3])Buzzersilence[3] = true;
+
   }
 }
 
@@ -384,8 +395,8 @@ void maintainMQTTConnection() {
     Serial.println("[WARNING] MQTT Disconnected. Reconnecting...");
     MQTTconnection = "Disconnected";
     connectToMQTT();
-  }else{
-    MQTTconnection = "Connected"; 
+  } else {
+    MQTTconnection = "Connected";
   }
 }
 
@@ -425,20 +436,23 @@ void handleFireAlarm(String payload) {
   SerialMon.print("FIRE_ALARM STATE: ");
   SerialMon.println(state);
 
-  if(state){
+  if (state) {
     SerialMon.println("Fire Alarm Activated at Cooling Plant");
     lastReceivedMessage = "FACP - Fire Alarm Activated at Cooling Plant";
     digitalWrite(R0, HIGH);
-    if(!SilenceEnabled){
-        digitalWrite(R1, HIGH);
-         Serial.println("LOCAL BELL ON");
+    if (!Buzzersilence[3]) {
+      digitalWrite(R1, HIGH);
+      Serial.println("LOCAL BELL ON");
+      ActivatedBuzzerInput[3] = true;
     }
-  }else{
+  } else {
     SerialMon.println("Fire Alarm Cleared at Cooling Plant");
     lastReceivedMessage = "FACP - Fire Alarm CLEARED at Cooling Plant";
+    Buzzersilence[3] = false;
     digitalWrite(R0, LOW);
     digitalWrite(R1, LOW);
-    SilenceEnabled = false;    
+    SilenceEnabled = false;
+    ActivatedBuzzerInput[3] = false;
   }
   lastTransmitterAliveTime = millis();
   transmitterDeadShown = false;
@@ -449,28 +463,28 @@ void handleFaultAlarm(String payload) {
   SerialMon.print("FAULT_ALARM STATE: ");
   SerialMon.println(state);
 
-  if(state){
+  if (state) {
     SerialMon.println("Fault reported at Cooling Plant");
     lastReceivedMessage = "FACP - Fault reported at Cooling Plant";
     digitalWrite(R2, HIGH);
     TX_Fault = true;
-    if(!Buzzersilence[0]){
-         faultActive = true;
-         lastBuzzerToggleTime = millis();
-         buzzerState = false;
-         digitalWrite(R3, LOW); // Start from OFF
-         ActivatedBuzzerInput[0] = true;
+    if (!Buzzersilence[0]) {
+      faultActive = true;
+      lastBuzzerToggleTime = millis();
+      buzzerState = false;
+      digitalWrite(R3, LOW); // Start from OFF
+      ActivatedBuzzerInput[0] = true;
     }
-  }else{
+  } else {
     SerialMon.println("Fault cleared at Cooling Plant");
     lastReceivedMessage = "FACP - Fault cleared at Cooling Plant";
     TX_Fault = false;
-    if((!TX_Fault)&&(!Tx_Main_Fails)&&(!Rx_Main_Fails)){
-        digitalWrite(R2, LOW);
+    if ((!TX_Fault) && (!Tx_Main_Fails) && (!Rx_Main_Fails)) {
+      digitalWrite(R2, LOW);
     }
     Buzzersilence[0] = false;
-    digitalWrite(R3, LOW); 
-    faultActive = false;  
+    digitalWrite(R3, LOW);
+    faultActive = false;
     ActivatedBuzzerInput[0] = false;
   }
   lastTransmitterAliveTime = millis();
@@ -482,28 +496,28 @@ void handleMainFailsAlarm(String payload) {
   SerialMon.print("MAIN_FAILS_ALARM STATE: ");
   SerialMon.println(state);
 
-  if(state){
+  if (state) {
     SerialMon.println("Main power fails reported at Cooling Plant");
     lastReceivedMessage = "FACP - Main Power Fails reported at Cooling Plant";
     digitalWrite(R2, HIGH);
     Tx_Main_Fails = true;
-    if(!Buzzersilence[1]){
-         faultActive = true;
-         lastBuzzerToggleTime = millis();
-         buzzerState = false;
-         digitalWrite(R3, LOW); // Start from OFF
-         ActivatedBuzzerInput[1] = true;
+    if (!Buzzersilence[1]) {
+      faultActive = true;
+      lastBuzzerToggleTime = millis();
+      buzzerState = false;
+      digitalWrite(R3, LOW); // Start from OFF
+      ActivatedBuzzerInput[1] = true;
     }
-  }else{
+  } else {
     SerialMon.println("Main power fails cleared at Cooling Plant");
     lastReceivedMessage = "FACP - Main Power Fails cleared at Cooling Plant";
     Tx_Main_Fails = false;
-    if((!TX_Fault)&&(!Tx_Main_Fails)&&(!Rx_Main_Fails)){
-        digitalWrite(R2, LOW);
+    if ((!TX_Fault) && (!Tx_Main_Fails) && (!Rx_Main_Fails)) {
+      digitalWrite(R2, LOW);
     }
     Buzzersilence[1] = false;
-    digitalWrite(R3, LOW); 
-    faultActive = false;  
+    digitalWrite(R3, LOW);
+    faultActive = false;
     ActivatedBuzzerInput[1] = false;
   }
   lastTransmitterAliveTime = millis();
@@ -515,28 +529,28 @@ void handleRXMainFailsAlarm(String payload) {
   SerialMon.print("RX_MAIN_FAILS_ALARM STATE: ");
   SerialMon.println(state);
 
-  if(state){
+  if (state) {
     SerialMon.println("Receiver Main power fails reported at Cooling Plant");
     lastReceivedMessage = "FACP - Receiver Main Power Fails reported at Cooling Plant";
     digitalWrite(R2, HIGH);
     Rx_Main_Fails = true;
-    if(!Buzzersilence[2]){
-         faultActive = true;
-         lastBuzzerToggleTime = millis();
-         buzzerState = false;
-         digitalWrite(R3, LOW); // Start from OFF
-         ActivatedBuzzerInput[2] = true;
+    if (!Buzzersilence[2]) {
+      faultActive = true;
+      lastBuzzerToggleTime = millis();
+      buzzerState = false;
+      digitalWrite(R3, LOW); // Start from OFF
+      ActivatedBuzzerInput[2] = true;
     }
-  }else{
+  } else {
     SerialMon.println("Receiver Main power fails cleared at Cooling Plant");
     lastReceivedMessage = "FACP - Receiver Main Power Fails cleared at Cooling Plant";
     Rx_Main_Fails = false;
-    if((!TX_Fault)&&(!Tx_Main_Fails)&&(!Rx_Main_Fails)){
-        digitalWrite(R2, LOW);
+    if ((!TX_Fault) && (!Tx_Main_Fails) && (!Rx_Main_Fails)) {
+      digitalWrite(R2, LOW);
     }
     Buzzersilence[2] = false;
-    digitalWrite(R3, LOW); 
-    faultActive = false;  
+    digitalWrite(R3, LOW);
+    faultActive = false;
     ActivatedBuzzerInput[2] = false;
   }
   lastTransmitterAliveTime = millis();
@@ -548,7 +562,7 @@ void handleAliveSignal(String payload) {
   SerialMon.print("ALIVE_STATUS ");
   SerialMon.println(state);
 
-  if(state){
+  if (state) {
     Serial.println("TRANSMITTER ALIVE RECEIVED");
     digitalWrite(R4, LOW);
     lastTransmitterAliveTime = millis();
@@ -590,14 +604,14 @@ void Init(void) {                        // Connecting with the network and GPRS
   gsm_send_serial("AT+CGPADDR=1", 500);
   gsm_send_serial("AT+CMGF=1", 1000); // Set SMS to text mode
   gsm_send_serial("AT+CNMI=2,1,0,0,0", 1000); // Immediate notification when SMS is received
-  
+
 }
 
 void connectToGPRS(void) {
   gsm_send_serial("AT+CGATT=1", 1000);
   String cmd = "AT+CGDCONT=1,\"IP\",\"" + String(apn) + "\"";
   gsm_send_serial(cmd, 1000);
- // gsm_send_serial("AT+CGDCONT=1,\"IP\",\"dialogbb\"", 1000);
+  // gsm_send_serial("AT+CGDCONT=1,\"IP\",\"dialogbb\"", 1000);
   gsm_send_serial("AT+CGACT=1,1", 1000);
   gsm_send_serial("AT+CGPADDR=1", 500);
 }
@@ -616,7 +630,7 @@ void connectToMQTT(void) {
   gsm_send_serial("AT+QSSLCFG=\"cacert\",2,\"RAM:datacake_ca.pem\"", 1000);
   gsm_send_serial("AT+QMTOPEN=0,\"159.89.214.202\",8883", 1000);
   delay(2000); // Wait for the connection to establish
-  gsm_send_serial("AT+QMTDISC=0",1000);
+  gsm_send_serial("AT+QMTDISC=0", 1000);
   delay(1000);
   String mqtt_conn = "AT+QMTCONN=0,\"Receiver_panel\",\"" + username + "\",\"" + password + "\"";
   gsm_send_serial(mqtt_conn, 1000);
@@ -627,7 +641,7 @@ void connectToMQTT(void) {
   String topic2 = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/FAULT_ALARM";
   String topic3 = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/MAINS_FAIL_ALARM";
   String topic4 = "dtck-pub/nsd-facp-repeater-1/997a8398-0323-4c19-9633-7ecdd259d7e0/TRANSMITTER_ALIVE_STATUS";
-  
+
   String sub1 = "AT+QMTSUB=0,0,\"" + topic1 + "\",0";
   gsm_send_serial(sub1, 1000);
   delay(1000);
@@ -710,12 +724,269 @@ int getGSMSignalStrength() {
     int commaIndex = response.indexOf(",", index);
     if (commaIndex != -1) {
       String rssiStr = response.substring(index + 6, commaIndex);
-      rssiStr.trim(); 
-      rssi = rssiStr.toInt(); 
+      rssiStr.trim();
+      rssi = rssiStr.toInt();
     }
   }
 
   return rssi;
+}
+
+void performOTA() {
+  int cert_length = root_ca.length();
+  String ca_cert = "AT+QFUPL=\"RAM:github_ca.pem\"," + String(cert_length) + ",100";
+  gsm_send_serial(ca_cert, 1000);
+  delay(1000);
+  gsm_send_serial(root_ca, 1000);
+  delay(1000);
+  gsm_send_serial("AT+QHTTPCFG=\"contextid\",1", 1000);
+  gsm_send_serial("AT+QHTTPCFG=\"responseheader\",1", 1000);
+  gsm_send_serial("AT+QHTTPCFG=\"sslctxid\",1", 1000);
+  gsm_send_serial("AT+QSSLCFG=\"sslversion\",1,4", 1000);
+  gsm_send_serial("AT+QSSLCFG=\"ciphersuite\",1,0xC02F", 1000);
+  gsm_send_serial("AT+QSSLCFG=\"seclevel\",1,1", 1000);
+  gsm_send_serial("AT+QSSLCFG=\"sni\",1,1", 1000);
+  gsm_send_serial("AT+QSSLCFG=\"cacert\",1,\"RAM:github_ca.pem\"", 1000);
+
+  gsm_send_serial("AT+QHTTPURL=" + String(firmware_url.length()) + ",80", 1000);
+  delay(100);
+  gsm_send_serial(firmware_url, 2000);
+
+  gsm_send_serial("AT+QHTTPGET=80", 1000);
+  Serial.println("[OTA] Waiting for +QHTTPGET response...");
+
+
+  long contentLength = -1;
+  unsigned long timeout = millis();
+  while (millis() - timeout < 5000) {
+    if (SerialAT.available()) {
+      String line = SerialAT.readStringUntil('\n');
+      line.trim();
+      if (line.length() == 0) continue;
+      Serial.println("[Modem Line] " + line);
+      if (line.startsWith("+QHTTPGET:")) {
+        int firstComma = line.indexOf(',');
+        int secondComma = line.indexOf(',', firstComma + 1);
+        if (firstComma != -1 && secondComma != -1) {
+          String lenStr = line.substring(secondComma + 1);
+          contentLength = lenStr.toInt();
+          Serial.print("[OTA] Content-Length: ");
+          Serial.println(contentLength);
+        }
+      }
+      if (line == "OK") break;
+    }
+    delay(10);
+  }
+
+  Serial.println("[OTA] HTTPS GET sent");
+
+  // Save response to RAM file
+  gsm_send_serial("AT+QHTTPREADFILE=\"RAM:firmware.bin\",80", 1000);
+
+  // Wait for final confirmation and avoid overlap
+  unsigned long readfileTimeout = millis();
+  while (millis() - readfileTimeout < 5000) {
+    if (SerialAT.available()) {
+      String line = SerialAT.readStringUntil('\n');
+      line.trim();
+      if (line.length() == 0) continue;
+      Serial.println("[READFILE] " + line);
+      if (line.startsWith("+QHTTPREADFILE:")) break;
+    }
+    delay(10);
+  }
+
+  // Clear SerialAT buffer
+  while (SerialAT.available()) SerialAT.read();
+
+  // Send QFLST directly
+  SerialAT.println("AT+QFLST=\"RAM:firmware.bin\"");
+
+  long ramFileSize = 0;
+  timeout = millis();
+  while (millis() - timeout < 5000) {
+    if (SerialAT.available()) {
+      String line = SerialAT.readStringUntil('\n');
+      line.trim();
+      if (line.length() == 0) continue;
+
+      Serial.println("[OTA Raw] " + line);
+
+      // Find +QFLST line
+      if (line.startsWith("+QFLST:")) {
+        int commaIdx = line.lastIndexOf(',');
+        if (commaIdx != -1) {
+          String sizeStr = line.substring(commaIdx + 1);
+          sizeStr.trim();
+          ramFileSize = sizeStr.toInt();
+          break;
+        }
+      }
+    }
+    delay(10);
+  }
+
+  Serial.println("[OTA] File size: " + String(ramFileSize));
+
+  if (ramFileSize <= 0) {
+    Serial.println("[OTA] ERROR: Invalid file size.");
+    return;
+  }
+
+
+
+  int headerSize = ramFileSize - contentLength;
+  if (headerSize <= 0 || headerSize > ramFileSize) {
+    Serial.println("[OTA] Invalid header size!");
+    return;
+  }
+  Serial.println("[OTA] Header size: " + String(headerSize));
+
+  // Clear SerialAT buffer before command
+  while (SerialAT.available()) SerialAT.read();
+
+  // Send QFOPEN directly
+  SerialAT.println("AT+QFOPEN=\"RAM:firmware.bin\",0");
+
+  int fileHandle = -1;
+  unsigned long handleTimeout = millis();
+
+  while (millis() - handleTimeout < 5000) {
+    if (SerialAT.available()) {
+      String line = SerialAT.readStringUntil('\n');
+      line.trim();
+      if (line.length() == 0) continue;
+
+      Serial.println("[OTA Raw] " + line);
+
+      if (line.startsWith("+QFOPEN:")) {
+        String handleStr = line.substring(line.indexOf(":") + 1);
+        handleStr.trim();
+        fileHandle = handleStr.toInt();
+        break;
+      }
+    }
+    delay(10);
+  }
+
+  Serial.println("[OTA] File handle: " + String(fileHandle));
+
+  if (fileHandle <= 0) {
+    Serial.println("[OTA] ERROR: Invalid file handle.");
+    return;
+  }
+
+  // Seek to payload
+  gsm_send_serial("AT+QFSEEK=" + String(fileHandle) + "," + String(headerSize) + ",0", 1000);
+  delay(300);
+  // Step 7: Begin OTA
+  if (!Update.begin(contentLength)) {
+    Serial.println("[OTA] Update.begin failed");
+    return;
+  }
+
+  Serial.println("[OTA] Start writing...");
+
+
+size_t chunkSize = 1024;
+size_t totalWritten = 0;
+uint8_t buffer[1024];
+
+while (totalWritten < contentLength) {
+  size_t bytesToRead = min(chunkSize, (size_t)(contentLength - totalWritten));
+  SerialAT.println("AT+QFREAD=" + String(fileHandle) + "," + String(bytesToRead));
+
+  // Wait for CONNECT (start of binary data)
+  bool gotConnect = false;
+  unsigned long startWait = millis();
+  while (millis() - startWait < 2000) {
+    if (SerialAT.available()) {
+      String line = SerialAT.readStringUntil('\n');
+      line.trim();
+      if (line.startsWith("CONNECT")) {
+        gotConnect = true;
+        break;
+      }
+    }
+    delay(1);
+  }
+  if (!gotConnect) {
+    Serial.println("[OTA] Failed to get CONNECT");
+    Update.abort();
+    return;
+  }
+
+  // Read exactly bytesToRead bytes of binary data
+  size_t readCount = 0;
+  unsigned long lastReadTime = millis();
+  while (readCount < bytesToRead && millis() - lastReadTime < 3000) {
+    if (SerialAT.available()) {
+      buffer[readCount++] = (uint8_t)SerialAT.read();
+      lastReadTime = millis();
+    } else {
+      delay(1);
+    }
+  }
+  if (readCount != bytesToRead) {
+    Serial.println("[OTA] Incomplete read from modem");
+    Update.abort();
+    return;
+  }
+
+  // After reading data, wait for the final OK
+  bool gotOK = false;
+  startWait = millis();
+  while (millis() - startWait < 2000) {
+    if (SerialAT.available()) {
+      String line = SerialAT.readStringUntil('\n');
+      line.trim();
+      if (line == "OK") {
+        gotOK = true;
+        break;
+      }
+    }
+    delay(1);
+  }
+  if (!gotOK) {
+    Serial.println("[OTA] Did not receive final OK after data");
+    Update.abort();
+    return;
+  }
+
+  // Write to flash
+  size_t written = Update.write(buffer, readCount);
+  if (written != readCount) {
+    Serial.println("[OTA] Flash write mismatch");
+    Update.abort();
+    return;
+  }
+
+  totalWritten += written;
+  Serial.printf("\r[OTA] Progress: %u / %u bytes", (unsigned)totalWritten, (unsigned)contentLength);
+}
+
+Serial.println("\n[OTA] Firmware write complete.");
+
+// Close the file
+SerialAT.println("AT+QFCLOSE=" + String(fileHandle));
+delay(500);
+
+// Finalize OTA update
+if (Update.end()) {
+  Serial.println("[OTA] Update successful!");
+  if (Update.isFinished()) {
+    sendSMS("FACP-Receiver Panel Updated Successfully");
+    delay(300);
+    Serial.println("[OTA] Rebooting...");
+    delay(300);
+    ESP.restart();
+  } else {
+    Serial.println("[OTA] Update not finished!");
+  }
+} else {
+  Serial.println("[OTA] Update failed with error: " + String(Update.getError()));
+}
 }
 
 bool isNetworkConnected() {
@@ -725,13 +996,13 @@ bool isNetworkConnected() {
 
 void isGPRSConnected() {
   String status = gsm_send_serial("AT+CGATT?", 3000);
-  if (status.indexOf("+CGATT: 1") == -1){
+  if (status.indexOf("+CGATT: 1") == -1) {
     Serial.println("[WARNING] MQTT Disconnected. Reconnecting...");
-    GPRSconnection = "Deactive"; 
+    GPRSconnection = "Deactive";
     connectToGPRS();
-  }else{
-    GPRSconnection = "Active"; 
-   }
+  } else {
+    GPRSconnection = "Active";
+  }
 }
 
 String gsm_send_serial(String command, int timeout) {
@@ -739,13 +1010,13 @@ String gsm_send_serial(String command, int timeout) {
   Serial.println("Send ->: " + command);
   SerialAT.println(command);
   unsigned long startMillis = millis();
-  
+
   while (millis() - startMillis < timeout) {
     while (SerialAT.available()) {
-//      char c = SerialAT.read();
-//      buff_resp += c;
-//    }
- String line = SerialAT.readStringUntil('\n');
+      //      char c = SerialAT.read();
+      //      buff_resp += c;
+      //    }
+      String line = SerialAT.readStringUntil('\n');
       line.trim();
 
       if (line.length() == 0) continue;
@@ -769,7 +1040,7 @@ String gsm_send_serial(String command, int timeout) {
     }
     delay(10); // Small delay to allow for incoming data to accumulate
   }
-  
+
   Serial.println("Response ->: " + buff_resp);
   return buff_resp;
 }
