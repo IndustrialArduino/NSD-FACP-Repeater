@@ -12,28 +12,32 @@
    - The LCD automatically scrolls every **3 seconds** through **three display interfaces**:
 
   **Display 1 – TX1 Status**
-
+  
+```bash   
 Node: FACP01 03/09 15:25
 TX1 Fire Alarm
 TX1 Fault Normal
 TX1 Alive Yes
 
+```
 **Display 2 – TX2 Status**
 
+```bash   
 Node: FACP01 03/09 15:25
 TX2 Fire Normal
 TX2 Fault Alarm
 TX2 Alive No
 
-
+```
 **Display 3 – RX Status**
 
+```bash  
 RX Mains Normal
 Signal: 22
 GPRS: Active
 MQTT: Connect
 
-
+ ```
 4. **Relay Activation Logic**
 - **Fire Alarm Handling**
   - If **DI-1 Fire Alarm** occurs on **TX-1 OR TX-2**:
