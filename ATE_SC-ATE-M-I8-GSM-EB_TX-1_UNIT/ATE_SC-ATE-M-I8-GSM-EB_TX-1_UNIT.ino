@@ -119,7 +119,7 @@ unsigned long activationStart[3] = {0, 0, 0};
 bool pendingAlarm[3] = {false, false, false};
 
 // Input names
-const char* inputNames[3] = {"Fire", "Fault", "Main"};
+const char* inputNames[3] = {"Fire", "Fault", "Mains"};
 
 // Status text abbreviations
 const char* statusText[2] = {"Normal", "Alarm"}; // 0 = inactive, 1 = active
@@ -388,7 +388,7 @@ void handleSMS(String message) {
   message.trim();
   message.toLowerCase();
 
-  if (message.indexOf("update the transmitter panel") != -1) {
+  if (message.indexOf("update the TX-1 panel") != -1) {
     Serial.println("[SMS Action] OTA UPDATE");
     performOTA();
   }

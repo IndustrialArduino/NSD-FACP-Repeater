@@ -9,7 +9,7 @@ const char apn[] = "dialogbb";
 const char gprsUser[] = "";
 const char gprsPass[] = "";
 
-// Delay settings in minutes (user configurable, 0–30)
+// Delay settings in minutes (user configurable, 0–30)(to avoid nuisance alerts)
 uint8_t inputDelayMinutes[3] = {
   0,   // DI-1 FIRE → instant
   10,  // DI-2 FAULT → 10 min
