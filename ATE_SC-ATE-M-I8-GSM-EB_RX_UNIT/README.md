@@ -14,7 +14,7 @@
   **Display 1 – TX1 Status**
   
 ```bash   
-Node: FACP01 03/09 15:25
+Node: RX 03/09 15:25
 TX1 Fire Alarm
 TX1 Fault Normal
 TX1 Alive Yes
@@ -23,7 +23,7 @@ TX1 Alive Yes
 **Display 2 – TX2 Status**
 
 ```bash   
-Node: FACP01 03/09 15:25
+Node: RX 03/09 15:25
 TX2 Fire Normal
 TX2 Fault Alarm
 TX2 Alive No
