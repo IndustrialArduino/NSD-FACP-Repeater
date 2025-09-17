@@ -162,11 +162,11 @@ void setup() {
 
   lcd.begin(16, 4);
 
-  if (io.begin() == false)
-  {
-    Serial.println("PCA9536 not detected. Please check wiring. Freezing...");
-    while (1);
-  }
+//  if (io.begin() == false)
+//  {
+//    Serial.println("PCA9536 not detected. Please check wiring. Freezing...");
+//    while (1);
+//  }
 
   io.pinMode(IO_RL1, OUTPUT);
   io.pinMode(IO_RL2, OUTPUT);
