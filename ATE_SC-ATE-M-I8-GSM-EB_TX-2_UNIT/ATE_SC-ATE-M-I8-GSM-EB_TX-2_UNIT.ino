@@ -48,7 +48,7 @@
 //ON BOARD BUZZER PIN
 #define BUZZER 3
 
-//ONBOARD DIGITAL INPUTS IN MIDDDLE OF BOARD 
+//ONBOARD DIGITAL INPUTS IN MIDDDLE OF BOARD
 #define DR_INPUT1  5
 #define DR_INPUT2  6
 
@@ -57,7 +57,7 @@
 #define INPUT2  11     // FAULT ALRAM INPUT
 #define INPUT3  10     // MAINS_FAIL_ALARM INPUT
 #define INPUT4  7
-#define INPUT5  13       
+#define INPUT5  13
 #define INPUT6  14
 
 //ON BOARD MOTION SENSOR INPUT
@@ -88,6 +88,7 @@ PCA9538_LCD lcd(PCA9538_ADDR);
 
 PCA9536 io;
 RTC_DS3231 rtc;
+char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
 #define DEBOUNCE_DELAY 50
 
 bool FEA_Status = false;
@@ -127,6 +128,9 @@ const char* statusText[2] = {"Normal", "Alarm"}; // 0 = inactive, 1 = active
 unsigned long lastScrollTime = 0;
 const unsigned long scrollDelay = 3000; // 3s per screen
 int scrollIndex = 0; // Which screen is currently displayed
+
+unsigned long lastDisplayUpdate = 0;
+const unsigned long displayInterval = 1000;
 
 void setup() {
   Serial.begin(115200);
@@ -171,7 +175,9 @@ void setup() {
 
   Init();
   connectToGPRS();
+  RTC_Check();
   connectToMQTT();
+  updateLCD16x4();
 
 }
 
@@ -201,6 +207,11 @@ void loop() {
     lastAliveSentTime = currentAliveMillis;
   }
 
+  if (millis() - lastDisplayUpdate > displayInterval) {
+    updateLCD16x4();
+    lastDisplayUpdate = millis();
+  }
+
   processing = false;
 
 }
@@ -228,57 +239,57 @@ void sendMQTTStatusUpdate() {
 
 
 void readInputsAndCheckAlarms() {
-    unsigned long now = millis();
-    currentState[0] = digitalRead(INPUT1);
-    currentState[1] = digitalRead(INPUT2);
-    currentState[2] = digitalRead(INPUT3);
+  unsigned long now = millis();
+  currentState[0] = digitalRead(INPUT1);
+  currentState[1] = digitalRead(INPUT2);
+  currentState[2] = digitalRead(INPUT3);
 
-    for (int i = 0; i < 3; i++) {
-        if (currentState[i] != lastStableState[i]) {
-            if ((now - lastDebounceTime[i]) > DEBOUNCE_DELAY) {
-                lastDebounceTime[i] = now;
-                lastStableState[i] = currentState[i];
+  for (int i = 0; i < 3; i++) {
+    if (currentState[i] != lastStableState[i]) {
+      if ((now - lastDebounceTime[i]) > DEBOUNCE_DELAY) {
+        lastDebounceTime[i] = now;
+        lastStableState[i] = currentState[i];
 
-                bool interpreted = interpretAlarmStatus(i, currentState[i]);
+        bool interpreted = interpretAlarmStatus(i, currentState[i]);
 
-                unsigned long delayMs = (unsigned long)inputDelayMinutes[i] * 60000UL;
+        unsigned long delayMs = (unsigned long)inputDelayMinutes[i] * 60000UL;
 
-                if (interpreted) {
-                    if (delayMs == 0) {
-                        // Instant alarm
-                        inputStatus[i] = true;
-                        handleAlarmStateChange(i, true);
-                    } else {
-                        // Start pending timer
-                        activationStart[i] = now;
-                        pendingAlarm[i] = true;
-                    }
-                } else {
-                    // Input cleared
-                    if (pendingAlarm[i]) {
-                        // Cleared before delay → cancel pending
-                        pendingAlarm[i] = false;
-                        activationStart[i] = 0;
-                    }
-                    if (inputStatus[i]) {
-                        // Alarm was already active → send restore immediately
-                        inputStatus[i] = false;
-                        handleAlarmStateChange(i, false);
-                    }
-                }
-            }
+        if (interpreted) {
+          if (delayMs == 0) {
+            // Instant alarm
+            inputStatus[i] = true;
+            handleAlarmStateChange(i, true);
+          } else {
+            // Start pending timer
+            activationStart[i] = now;
+            pendingAlarm[i] = true;
+          }
+        } else {
+          // Input cleared
+          if (pendingAlarm[i]) {
+            // Cleared before delay → cancel pending
+            pendingAlarm[i] = false;
+            activationStart[i] = 0;
+          }
+          if (inputStatus[i]) {
+            // Alarm was already active → send restore immediately
+            inputStatus[i] = false;
+            handleAlarmStateChange(i, false);
+          }
         }
-
-        // Check if pending timer expired
-        if (pendingAlarm[i]) {
-            unsigned long delayMs = (unsigned long)inputDelayMinutes[i] * 60000UL;
-            if (now - activationStart[i] >= delayMs) {
-                inputStatus[i] = true;
-                pendingAlarm[i] = false;
-                handleAlarmStateChange(i, true);
-            }
-        }
+      }
     }
+
+    // Check if pending timer expired
+    if (pendingAlarm[i]) {
+      unsigned long delayMs = (unsigned long)inputDelayMinutes[i] * 60000UL;
+      if (now - activationStart[i] >= delayMs) {
+        inputStatus[i] = true;
+        pendingAlarm[i] = false;
+        handleAlarmStateChange(i, true);
+      }
+    }
+  }
 }
 
 
@@ -303,7 +314,7 @@ void handleAlarmStateChange(int idx, bool status) {
 
   switch (idx) {
     case 0:
-      topic = mqttConfig.fireTopic; 
+      topic = mqttConfig.fireTopic;
       Serial.println(status ? "[ALARM] FIRE Active" : "[NORMAL] FIRE Normal");
       break;
     case 1:
@@ -547,7 +558,7 @@ void connectToMQTT(void) {
   delay(2000); // Wait for the connection to establish
   gsm_send_serial("AT+QMTDISC=0", 1000);
   delay(1000);
-  String mqtt_conn = "AT+QMTCONN=0,\"Transmitter_panel\",\"" + username + "\",\"" + password + "\"";
+  String mqtt_conn = "AT+QMTCONN=0,\"TX2\",\"" + username + "\",\"" + password + "\"";
   gsm_send_serial(mqtt_conn, 1000);
   delay(2000); // Wait for the connection to establish
 
@@ -563,13 +574,14 @@ void updateLCD16x4() {
   lcd.clear();
 
   // --- Row 0: Node + Date/Time ---
-  char row0[17];
-  snprintf(row0, 17, "Node:%s %02d/%02d %02d:%02d", nodeName, now.day(), now.month(), now.hour(), now.minute());
+  char row0[21];
+  snprintf(row0, sizeof(row0), "%s %02d/%02d %02d:%02d:%02d",
+           nodeName, now.day(), now.month(), now.hour(), now.minute(), now.second());
   lcd.setCursor(0, 0);
   lcd.print(row0);
 
   // --- Rows 1-3: Depending on scrollIndex ---
-  switch(scrollIndex) {
+  switch (scrollIndex) {
     case 0:
       // Show input statuses
       for (int i = 0; i < 3; i++) {
@@ -605,12 +617,56 @@ void updateLCD16x4() {
   }
 }
 
+void displayTime(void) {
+  DateTime now = rtc.now();
+
+  Serial.print(now.year(), DEC);
+  Serial.print('/');
+  Serial.print(now.month(), DEC);
+  Serial.print('/');
+  Serial.print(now.day(), DEC);
+  Serial.print(" ");
+  Serial.print(daysOfTheWeek[now.dayOfTheWeek()]);
+
+  Serial.print(now.hour(), DEC);
+  Serial.print(':');
+  Serial.print(now.minute(), DEC);
+  Serial.print(':');
+  Serial.print(now.second(), DEC);
+  Serial.println();
+  delay(1000);
+
+}
+
+void RTC_Check() {
+  if (! rtc.begin()) {
+    Serial.println("Couldn't find RTC");
+  }
+  else {
+    if (rtc.lostPower()) {
+
+      Serial.println("RTC lost power, lets set the time!");
+      //rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
+      syncRTCWithNetworkTime();
+
+    }
+    syncRTCWithNetworkTime();
+
+    int a = 1;
+    while (a < 6)
+    {
+      displayTime();   // printing time function for oled
+      a = a + 1;
+    }
+  }
+}
+
 String getNetworkTime() {
   String response = gsm_send_serial("AT+QLTS=1", 2000);
   // Expected response: +QLTS: "2025/09/02,15:48:30+08"
   int idx = response.indexOf("+QLTS: \"");
   if (idx >= 0) {
-    String t = response.substring(idx + 8, idx + 27); // Extract "YYYY/MM/DD,HH:MM:SS+TZ"
+    String t = response.substring(idx + 8, response.indexOf("\"", idx + 8)); // Extract "YYYY/MM/DD,HH:MM:SS+TZ"
     t.trim();
     Serial.println("Network Time: " + t);
     return t;
@@ -622,28 +678,37 @@ void syncRTCWithNetworkTime() {
   String t = getNetworkTime(); // +QLTS response
   if (t.length() == 0) return;
 
-  int yyyy = t.substring(0,4).toInt();
-  int mm   = t.substring(5,7).toInt();
-  int dd   = t.substring(8,10).toInt();
-  int hh   = t.substring(11,13).toInt();
-  int mi   = t.substring(14,16).toInt();
-  int ss   = t.substring(17,19).toInt();
+  int yyyy = t.substring(0, 4).toInt();
+  int mm   = t.substring(5, 7).toInt();
+  int dd   = t.substring(8, 10).toInt();
+  int hh   = t.substring(11, 13).toInt();
+  int mi   = t.substring(14, 16).toInt();
+  int ss   = t.substring(17, 19).toInt();
 
-  // Parse timezone in 15-min intervals
-  int tzIndex = t.indexOf(',',20); // find first comma after time
-  int tzRaw = t.substring(20, tzIndex).toInt(); 
-  int tzMinutes = tzRaw * 15; // convert to minutes
-  int tzHours = tzMinutes / 60;
-  int tzMins = tzMinutes % 60;
+  // --- Timezone parsing ---
+  int tzStart = 19;
+  int tzSign = (t.charAt(tzStart) == '-') ? -1 : 1;
+  int tzRaw  = t.substring(tzStart + 1, t.indexOf(',', tzStart)).toInt();
+  int tzMinutes = tzRaw * 15 * tzSign;
 
-  // Adjust hh/mi to local time
-  hh += tzHours;
-  mi += tzMins;
-  if (mi >= 60) { mi -= 60; hh += 1; }
-  if (hh >= 24) { hh -= 24; dd += 1; } // Simplified: ignore month overflow
 
-  rtc.adjust(DateTime(yyyy, mm, dd, hh, mi, ss));
-  Serial.println("RTC synced with network time (adjusted for TZ).");
+  // Apply timezone shift
+  long totalSeconds = (hh * 3600L) + (mi * 60L) + ss;
+  totalSeconds += tzMinutes * 60L;
+
+  // Handle overflow/underflow by using DateTime
+  DateTime dt(yyyy, mm, dd, 0, 0, 0);
+  dt = dt + TimeSpan(totalSeconds);
+
+  rtc.adjust(dt);
+
+  Serial.print("RTC synced with network time: ");
+  Serial.print(dt.year()); Serial.print('/');
+  Serial.print(dt.month()); Serial.print('/');
+  Serial.print(dt.day()); Serial.print(" ");
+  Serial.print(dt.hour()); Serial.print(':');
+  Serial.print(dt.minute()); Serial.print(':');
+  Serial.println(dt.second());
 }
 
 int getGSMSignalStrength() {
