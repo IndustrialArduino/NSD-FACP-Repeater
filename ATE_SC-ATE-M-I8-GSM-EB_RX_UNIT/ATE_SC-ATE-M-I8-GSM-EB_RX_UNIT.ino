@@ -131,7 +131,7 @@ int cachedSignalStrength = -1;
 
 unsigned long lastTX1AliveTime = 0;
 unsigned long lastTX2AliveTime = 0;
-const unsigned long transmitterTimeout = 1UL * 60UL * 1000UL;  // 15 minutes
+const unsigned long transmitterTimeout = 15UL * 60UL * 1000UL;  // 15 minutes
 bool TX1_DeadShown = false;
 bool TX2_DeadShown = false;
 
