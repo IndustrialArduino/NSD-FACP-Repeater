@@ -124,7 +124,7 @@ bool pendingAlarm[3] = {false, false, false};
 const char* inputNames[3] = {"Fire", "Fault", "Mains"};
 
 // Status text abbreviations
-const char* statusText[2] = {"Normal", "Alarm"}; // 0 = inactive, 1 = active
+const char* statusText[2] = {"- Normal", "- Alarm"}; // 0 = inactive, 1 = active
 
 unsigned long lastScrollTime = 0;
 const unsigned long scrollDelay = 3000; // 3s per screen
@@ -173,6 +173,11 @@ void setup() {
   io.pinMode(IO_RL2, OUTPUT);
   io.pinMode(IO_TR1, OUTPUT);
   io.pinMode(IO_TR2, OUTPUT);
+
+  io.digitalWrite(IO_TR1, LOW);
+  io.digitalWrite(IO_TR2, LOW);
+  io.digitalWrite(IO_RL2, LOW);
+  io.digitalWrite(IO_RL1, LOW);
 
   Init();
   connectToGPRS();

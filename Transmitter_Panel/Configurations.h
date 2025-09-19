@@ -11,8 +11,8 @@ String phonecall_phoneNumbers[3] = {"+94761111111", "+94741111111", "+9477111111
 
 //Your phone numbers for SMS
 const char* phoneNumbers[5] = {
+   "+94771111111",
    "+94761111111",
-   "+94741111111",
    "+94701111111",
    "+94741111111",
    "+94781111111"
@@ -20,7 +20,7 @@ const char* phoneNumbers[5] = {
 };
 
 //Phone number of the RX to Send alive message
-const char* ReceiverPanelAlive = {"+94761111111" };  
+const char* ReceiverPanelAlive = {"+94771111111" };  
 
 //PLEASE DON'T CHANGE THIS. THESE ARE NOTIFICATION MODES
 enum NotificationMode {

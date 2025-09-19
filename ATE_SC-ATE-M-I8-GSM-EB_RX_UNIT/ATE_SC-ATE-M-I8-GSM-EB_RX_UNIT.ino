@@ -131,7 +131,7 @@ int cachedSignalStrength = -1;
 
 unsigned long lastTX1AliveTime = 0;
 unsigned long lastTX2AliveTime = 0;
-const unsigned long transmitterTimeout = 15UL * 60UL * 1000UL;  // 15 minutes
+const unsigned long transmitterTimeout = 1UL * 60UL * 1000UL;  // 15 minutes
 bool TX1_DeadShown = false;
 bool TX2_DeadShown = false;
 
@@ -152,7 +152,7 @@ bool TX2_Alive = true;
 int txID = 0; // 0 = unknown, 1 = TX1, 2 = TX2
 
 unsigned long lastScrollTime = 0;
-const unsigned long scrollDelay = 3000; // 3s per screen
+const unsigned long scrollDelay = 1000; // 1s per screen
 int scrollIndex = 0; // Which screen is currently displayed
 
 String firmware_url = "https://raw.githubusercontent.com/IndustrialArduino/NSD-FACP-Updates/release/Receiver_Panel.bin";
@@ -242,6 +242,11 @@ void setup() {
   io.pinMode(IO_TR1, OUTPUT);
   io.pinMode(IO_TR2, OUTPUT);
 
+  io.digitalWrite(IO_TR1, LOW);
+  io.digitalWrite(IO_TR2, LOW);
+  io.digitalWrite(IO_RL2, LOW);
+  io.digitalWrite(IO_RL1, LOW);
+
 
 
   Init();
@@ -270,6 +275,7 @@ void Buzzer_task(void *parameter) {
 
 void loop() {
   checkForMessage();
+  checkForAliveMessage();
   readInputsAndCheckAlarms();
   checkSilenceButton();
   checkTransmitterAlive();
@@ -378,6 +384,10 @@ void checkForMessage() {
   String response = gsm_send_serial("AT+CMGL=\"REC UNREAD\"", 2000); // List unread messages
 }
 
+void checkForAliveMessage() {
+  String response = gsm_send_serial("AT+QMTRECV=0,0", 2000); // List unread messages
+}
+
 void handleSMSLine(String metaLine) {
   int indexEnd = metaLine.indexOf("\n");
   int bodyStart = indexEnd + 1;
@@ -439,6 +449,10 @@ void handleSMS(String message) {
     if (!Buzzersilence[3]) {
       io.digitalWrite(IO_RL1, HIGH); // Local bell
       Serial.println("LOCAL BELL ON");
+      faultActive = true;
+      lastBuzzerToggleTime = millis();
+      buzzerState = false;
+      digitalWrite(BUZZER, LOW); // Start from OFF
       ActivatedBuzzerInput[3] = true;
     }
   }
@@ -452,9 +466,11 @@ void handleSMS(String message) {
     } else {
       TX2_Fire = false;
     }
-
+    Buzzersilence[3] = false;
     io.digitalWrite(IO_RL2, LOW);
     io.digitalWrite(IO_RL1, LOW);
+    digitalWrite(BUZZER, LOW);
+    faultActive = false;
     ActivatedBuzzerInput[3] = false;
   }
 
@@ -601,6 +617,10 @@ void handleFireAlarm(String payload) {
     if (!Buzzersilence[3]) {
       io.digitalWrite(IO_RL1, HIGH);;
       Serial.println("LOCAL BELL ON");
+      faultActive = true;
+      lastBuzzerToggleTime = millis();
+      buzzerState = false;
+      digitalWrite(BUZZER, LOW); // Start from OFF
       ActivatedBuzzerInput[3] = true;
     }
   } else {
@@ -615,6 +635,8 @@ void handleFireAlarm(String payload) {
     io.digitalWrite(IO_RL2, LOW);
     io.digitalWrite(IO_RL1, LOW);
     SilenceEnabled = false;
+    digitalWrite(BUZZER, LOW);
+    faultActive = false;
     ActivatedBuzzerInput[3] = false;
   }
   if (txID == 1) {
@@ -751,34 +773,34 @@ void connectToMQTT(void) {
   gsm_send_serial("AT+QSSLCFG=\"cacert\",2,\"RAM:datacake_ca.pem\"", 1000);
   gsm_send_serial("AT+QMTOPEN=0,\"159.89.214.202\",8883", 1000);
   delay(2000); // Wait for the connection to establish
-  gsm_send_serial("AT+QMTDISC=0", 1000);
-  delay(1000);
+  //gsm_send_serial("AT+QMTDISC=0", 1000);
+  //delay(1000);
   String mqtt_conn = "AT+QMTCONN=0,\"RX\",\"" + username + "\",\"" + password + "\"";
   gsm_send_serial(mqtt_conn, 1000);
   delay(2000); // Wait for the connection to establish
 
 
-  String sub1 = "AT+QMTSUB=0,0,\"" + String(mqttConfig.TX1_fireTopic) + "\",0";
-  gsm_send_serial(sub1, 1000);
-  delay(1000);
+  //String sub1 = "AT+QMTSUB=0,0,\"" + String(mqttConfig.TX1_fireTopic) + "\",0";
+  //gsm_send_serial(sub1, 1000);
+  //delay(1000);
 
-  String sub2 = "AT+QMTSUB=0,1,\"" + String(mqttConfig.TX1_faultTopic) + "\",0";
-  gsm_send_serial(sub2, 1000);
-  delay(1000);
+  //String sub2 = "AT+QMTSUB=0,1,\"" + String(mqttConfig.TX1_faultTopic) + "\",0";
+  //gsm_send_serial(sub2, 1000);
+  //delay(1000);
 
-  String sub3 = "AT+QMTSUB=0,2,\"" + String(mqttConfig.TX1_aliveTopic) + "\",0";
+  String sub3 = "AT+QMTSUB=0,0,\"" + String(mqttConfig.TX1_aliveTopic) + "\",0";
   gsm_send_serial(sub3, 1000);
   delay(1000);
 
-  String sub4 = "AT+QMTSUB=0,3,\"" + String(mqttConfig.TX2_fireTopic) + "\",0";
-  gsm_send_serial(sub4, 1000);
-  delay(1000);
+  //String sub4 = "AT+QMTSUB=0,3,\"" + String(mqttConfig.TX2_fireTopic) + "\",0";
+  //gsm_send_serial(sub4, 1000);
+  //delay(1000);
 
-  String sub5 = "AT+QMTSUB=0,4,\"" + String(mqttConfig.TX2_faultTopic) + "\",0";
-  gsm_send_serial(sub5, 1000);
-  delay(1000);
+  //String sub5 = "AT+QMTSUB=0,4,\"" + String(mqttConfig.TX2_faultTopic) + "\",0";
+  //gsm_send_serial(sub5, 1000);
+  //delay(1000);
 
-  String sub6 = "AT+QMTSUB=0,5,\"" + String(mqttConfig.TX2_aliveTopic) + "\",0";
+  String sub6 = "AT+QMTSUB=0,1,\"" + String(mqttConfig.TX2_aliveTopic) + "\",0";
   gsm_send_serial(sub6, 1000);
   delay(1000);
 
@@ -804,13 +826,13 @@ void updateLCD16x4() {
       lcd.print(row0);
 
       lcd.setCursor(0, 1);
-      lcd.print(String("TX1 Fire ") + (TX1_Fire ? "Alarm" : "Normal"));
+      lcd.print(String("TX1 Fire ") + (TX1_Fire ? "- Alarm" : "- Normal"));
 
       lcd.setCursor(0, 2);
-      lcd.print(String("TX1 Fault ") + (TX1_Fault ? "Alarm" : "Normal"));
+      lcd.print(String("TX1 Fault ") + (TX1_Fault ? "- Alarm" : "- Normal"));
 
       lcd.setCursor(0, 3);
-      lcd.print(String("TX1 Alive ") + (TX1_Alive ? "Yes" : "No"));
+      lcd.print(String("TX1 Alive ") + (TX1_Alive ? "- Yes" : "- No"));
       break;
 
     case 1: // --- TX2 status ---
@@ -822,13 +844,13 @@ void updateLCD16x4() {
       lcd.print(row0);
 
       lcd.setCursor(0, 1);
-      lcd.print(String("TX2 Fire ") + (TX2_Fire ? "Alarm" : "Normal"));
+      lcd.print(String("TX2 Fire ") + (TX2_Fire ? "- Alarm" : "- Normal"));
 
       lcd.setCursor(0, 2);
-      lcd.print(String("TX2 Fault ") + (TX2_Fault ? "Alarm" : "Normal"));
+      lcd.print(String("TX2 Fault ") + (TX2_Fault ? "- Alarm" : "- Normal"));
 
       lcd.setCursor(0, 3);
-      lcd.print(String("TX2 Alive ") + (TX2_Alive ? "Yes" : "No"));
+      lcd.print(String("TX2 Alive ") + (TX2_Alive ? "- Yes" : "- No"));
       break;
 
     case 2: // --- RX + GSM/GPRS/MQTT ---
@@ -1239,42 +1261,49 @@ void isGPRSConnected() {
   }
 }
 
+
+
 String gsm_send_serial(String command, int timeout) {
-  String buff_resp = "";
-  Serial.println("Send ->: " + command);
-  SerialAT.println(command);
-  unsigned long startMillis = millis();
+    String buff_resp = "";
+    Serial.println("Send ->: " + command);
+    SerialAT.println(command);
+    unsigned long startMillis = millis();
 
-  while (millis() - startMillis < timeout) {
-    while (SerialAT.available()) {
-      //      char c = SerialAT.read();
-      //      buff_resp += c;
-      //    }
-      String line = SerialAT.readStringUntil('\n');
-      line.trim();
+    while (millis() - startMillis < timeout) {
+        while (SerialAT.available()) {
+            String line = SerialAT.readStringUntil('\n');
+            line.trim();
 
-      if (line.length() == 0) continue;
+            if (line.length() == 0) continue;
 
-      Serial.println("[Modem Line] " + line);
+            // Handle MQTT lines first (skip any filtering)
+            if (line.startsWith("+QMTRECV:")) {
+                handleIncomingMessages(line);
+                continue;
+            }
 
-      // Handle MQTT lines
-      if (line.startsWith("+QMTRECV:")) {
-        handleIncomingMessages(line); // Reuse MQTT message parser
-        continue; // Do not append to buffer
-      }
+            // Remove common garbage
+            line.replace("&gt;", ">");
+            line.replace("-&gt;", "->");
 
-      // Handle SMS lines
-      if (line.startsWith("+CMGL:")) {
-        handleSMSLine(line); // Extract and forward SMS
-        continue; // Do not append to buffer
-      }
+            // Remove anything before the first '+' (modem response start)
+            int idx = line.indexOf('+');
+            if (idx >= 0) line = line.substring(idx);
+            else if (line.startsWith("OK") || line.startsWith("ERROR")) {
+                // keep OK or ERROR lines
+            } else {
+                continue; // skip garbage lines
+            }
 
-      // Accumulate only unhandled lines
-      buff_resp += line + "\n";
+            // Skip MQTT/SMS lines if needed
+            if (line.startsWith("+CMGL:")) { handleSMSLine(line); continue; }
+
+            // Accumulate only clean line
+            buff_resp += line + "\n";
+        }
+        delay(10);
     }
-    delay(10); // Small delay to allow for incoming data to accumulate
-  }
 
-  Serial.println("Response ->: " + buff_resp);
-  return buff_resp;
+    Serial.println("Response ->: " + buff_resp);
+    return buff_resp;
 }

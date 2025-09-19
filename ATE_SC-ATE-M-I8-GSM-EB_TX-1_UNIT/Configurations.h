@@ -5,7 +5,7 @@
 const char* nodeName = "TX-1";
 
 // Your GPRS credentials
-const char apn[] = "dialogbb";
+const char apn[] = "etisalat.ae";
 const char gprsUser[] = "";
 const char gprsPass[] = "";
 
@@ -18,24 +18,17 @@ uint8_t inputDelayMinutes[3] = {
 
 //Your phone numbers for phone calls
 String phonecall_phoneNumbers[5] = {
-  "+94761111111",   // #1
-  "+94741111111",   // #2
-  "+94771111111",   // #3 
-  "",               // #4
-  ""                // #5
+  "+971506168293"   // #1
+
 };
 
 //RX number is Always included in SMS (do not remove)
-String rxSimNumber = "+94771111111";  
+String rxSimNumber = "+971501608741";    
 
 //Pool of up to 6 numbers for routing (can be empty "")
 String smsRoutingNumbers[6] = {
-  "+94761111111",   // #1
-  "+94781111111",   // #2
-  "",               // #3 (not used)
-  "",               // #4 (not used)
-  "",               // #5 (not used)
-  ""                // #6 (not used)
+  "+971506168293"   // #1
+
 };
 
 struct NotificationRule {

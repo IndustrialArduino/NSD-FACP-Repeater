@@ -5,7 +5,7 @@
 const char* nodeName = "RX";
 
 // Your GPRS credentials
-const char apn[] = "dialogbb";
+const char apn[] = "etisalat.ae";
 const char gprsUser[] = "";
 const char gprsPass[] = "";
 
@@ -17,12 +17,8 @@ uint8_t numPhoneNumbers = 3;  // Example: send to first 3 numbers
 
 //Your phone numbers for SMS
 const char* phoneNumbers[5] = {
-   "+94761111111",
-   "+94771111111",
-   "+94701111111",
-   "+94741111111",
-   "+94711111111"
-  
+   "+971506168293"
+     
 };
 
 //MQQT TOPIC STRUCT
