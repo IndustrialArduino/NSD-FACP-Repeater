@@ -442,14 +442,21 @@ void handleSMS(String message) {
     }
 
     io.digitalWrite(IO_RL2, HIGH); // Local relay
-    if (!Buzzersilence[3]) {
+    if (((TX1_Fire)&&(!Buzzersilence[2]))||((TX2_Fire)&&(!Buzzersilence[3]))) {
       io.digitalWrite(IO_RL1, HIGH); // Local bell
       Serial.println("LOCAL BELL ON");
-      faultActive = true;
+      if(TX1_Fire){
+        faultActive = true;
+        ActivatedBuzzerInput[2] = true;
+        buzzerState = false;
+      }
+      if(TX2_Fire){
+        faultActive = true;
+        ActivatedBuzzerInput[3] = true;
+        buzzerState = false;
+      }
       lastBuzzerToggleTime = millis();
-      buzzerState = false;
       digitalWrite(BUZZER, LOW); // Start from OFF
-      ActivatedBuzzerInput[3] = true;
     }
   }
   else if (message.indexOf("fire alarm cleared") != -1) {
@@ -462,12 +469,20 @@ void handleSMS(String message) {
     } else {
       TX2_Fire = false;
     }
-    Buzzersilence[3] = false;
+    if(!TX1_Fire){
+      Buzzersilence[2] = false;
+      ActivatedBuzzerInput[2] = false;
+      faultActive = false;
+    }
+    if(!TX2_Fire){
+      Buzzersilence[3] = false;
+      ActivatedBuzzerInput[3] = false;
+      faultActive = false;
+    }
     io.digitalWrite(IO_RL2, LOW);
     io.digitalWrite(IO_RL1, LOW);
     digitalWrite(BUZZER, LOW);
-    faultActive = false;
-    ActivatedBuzzerInput[3] = false;
+
   }
 
   // Fault Alarm
@@ -482,12 +497,19 @@ void handleSMS(String message) {
       TX2_Fault = true;
     }
 
-    if (!Buzzersilence[0]) {
-      faultActive = true;
+    if (((TX1_Fault)&&(!Buzzersilence[0]))||((TX2_Fault)&&(!Buzzersilence[1]))) {
+      if(TX1_Fault){
+         faultActive = true;
+         buzzerState = false;
+         ActivatedBuzzerInput[0] = true;
+      }
+      if(TX2_Fault){
+         faultActive = true;
+         buzzerState = false;
+         ActivatedBuzzerInput[1] = true;
+      }
       lastBuzzerToggleTime = millis();
-      buzzerState = false;
       digitalWrite(BUZZER, LOW); // Start from OFF
-      ActivatedBuzzerInput[0] = true;
     }
   }
   else if (message.indexOf("fault cleared") != -1) {
@@ -501,10 +523,18 @@ void handleSMS(String message) {
       TX2_Fault = false;
     }
 
-    Buzzersilence[0] = false;
+      if(!TX1_Fault){
+         faultActive = false;
+         Buzzersilence[0] = false;
+         ActivatedBuzzerInput[0] = false;
+      }
+      if(!TX2_Fault){
+         faultActive = false;
+         Buzzersilence[1] = false;
+         ActivatedBuzzerInput[1] = false;
+      }
+
     digitalWrite(BUZZER, LOW);
-    faultActive = false;
-    ActivatedBuzzerInput[0] = false;
   }
 
   if (txID == 1) {
@@ -610,14 +640,22 @@ void handleFireAlarm(String payload) {
     }
     lastReceivedMessage = "FACP - Fire Alarm Activated at Cooling Plant";
     io.digitalWrite(IO_RL2, HIGH);
-    if (!Buzzersilence[3]) {
-      io.digitalWrite(IO_RL1, HIGH);;
+     if (((TX1_Fire)&&(!Buzzersilence[2]))||((TX2_Fire)&&(!Buzzersilence[3]))) {
+      io.digitalWrite(IO_RL1, HIGH); // Local bell
       Serial.println("LOCAL BELL ON");
-      faultActive = true;
+      if(TX1_Fire){
+        faultActive = true;
+        ActivatedBuzzerInput[2] = true;
+        buzzerState = false;
+      }
+      if(TX2_Fire){
+        faultActive = true;
+        ActivatedBuzzerInput[3] = true;
+        buzzerState = false;
+      }
       lastBuzzerToggleTime = millis();
       buzzerState = false;
       digitalWrite(BUZZER, LOW); // Start from OFF
-      ActivatedBuzzerInput[3] = true;
     }
   } else {
     SerialMon.println("Fire Alarm Cleared at Cooling Plant");
@@ -627,13 +665,21 @@ void handleFireAlarm(String payload) {
       TX2_Fire = false;
     }
     lastReceivedMessage = "FACP - Fire Alarm CLEARED at Cooling Plant";
-    Buzzersilence[3] = false;
+     if(!TX1_Fire){
+      Buzzersilence[2] = false;
+      ActivatedBuzzerInput[2] = false;
+      faultActive = false;
+    }
+    if(!TX2_Fire){
+      Buzzersilence[3] = false;
+      ActivatedBuzzerInput[3] = false;
+      faultActive = false;
+    }
     io.digitalWrite(IO_RL2, LOW);
     io.digitalWrite(IO_RL1, LOW);
-    SilenceEnabled = false;
     digitalWrite(BUZZER, LOW);
-    faultActive = false;
-    ActivatedBuzzerInput[3] = false;
+
+    SilenceEnabled = false;
   }
   if (txID == 1) {
     TX1_Alive = true;
@@ -659,13 +705,21 @@ void handleFaultAlarm(String payload) {
       TX2_Fault = true;
     }
     lastReceivedMessage = "FACP - Fault reported at Cooling Plant";
-    if (!Buzzersilence[0]) {
-      faultActive = true;
+        if (((TX1_Fault)&&(!Buzzersilence[0]))||((TX2_Fault)&&(!Buzzersilence[1]))) {
+      if(TX1_Fault){
+         faultActive = true;
+         buzzerState = false;
+         ActivatedBuzzerInput[0] = true;
+      }
+      if(TX2_Fault){
+         faultActive = true;
+         buzzerState = false;
+         ActivatedBuzzerInput[1] = true;
+      }
       lastBuzzerToggleTime = millis();
-      buzzerState = false;
       digitalWrite(BUZZER, LOW); // Start from OFF
-      ActivatedBuzzerInput[0] = true;
     }
+
   } else {
     SerialMon.println("Fault cleared at Cooling Plant");
     if (txID == 1) {
@@ -673,11 +727,23 @@ void handleFaultAlarm(String payload) {
     } else {
       TX2_Fault = false;
     }
+    
     lastReceivedMessage = "FACP - Fault cleared at Cooling Plant";
-    Buzzersilence[0] = false;
+    
+      if(!TX1_Fault){
+         faultActive = false;
+         Buzzersilence[0] = false;
+         ActivatedBuzzerInput[0] = false;
+      }
+      if(!TX2_Fault){
+         faultActive = false;
+         Buzzersilence[1] = false;
+         ActivatedBuzzerInput[1] = false;
+      }
+
     digitalWrite(BUZZER, LOW);
-    faultActive = false;
-    ActivatedBuzzerInput[0] = false;
+
+
   }
   if (txID == 1) {
     TX1_Alive = true;
