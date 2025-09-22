@@ -276,7 +276,6 @@ void Buzzer_task(void *parameter) {
 
 void loop() {
   checkForMessage();
-  checkForAliveMessage();
   readInputsAndCheckAlarms();
   checkSilenceButton();
   checkTransmitterAlive();
@@ -383,10 +382,6 @@ void sendSMS(String message, uint8_t numRecipients) {
 
 void checkForMessage() {
   String response = gsm_send_serial("AT+CMGL=\"REC UNREAD\"", 2000); // List unread messages
-}
-
-void checkForAliveMessage() {
-  String response = gsm_send_serial("AT+QMTRECV=0,0", 2000); // List unread messages
 }
 
 void handleSMSLine(String metaLine) {
@@ -1264,7 +1259,7 @@ void isGPRSConnected() {
 
 
 
-String gsm_send_serial(String command, int timeout) {
+/*String gsm_send_serial(String command, int timeout) {
     String buff_resp = "";
     Serial.println("Send ->: " + command);
     SerialAT.println(command);
@@ -1307,4 +1302,43 @@ String gsm_send_serial(String command, int timeout) {
 
     Serial.println("Response ->: " + buff_resp);
     return buff_resp;
+}*/
+
+String gsm_send_serial(String command, int timeout) {
+  String buff_resp = "";
+  Serial.println("Send ->: " + command);
+  SerialAT.println(command);
+  unsigned long startMillis = millis();
+
+  while (millis() - startMillis < timeout) {
+    while (SerialAT.available()) {
+      //      char c = SerialAT.read();
+      //      buff_resp += c;
+      //    }
+      String line = SerialAT.readStringUntil('\n');
+      line.trim();
+
+      if (line.length() == 0) continue;
+
+      Serial.println("[Modem Line] " + line);
+
+     if (line.startsWith("+QMTRECV:")) {
+        handleIncomingMessages(line); // Extract and forward mqqt
+        continue; // Do not append to buffer
+      }
+
+      // Handle SMS lines
+      if (line.startsWith("+CMGL:")) {
+        handleSMSLine(line); // Extract and forward SMS
+        continue; // Do not append to buffer
+      }
+
+      // Accumulate only unhandled lines
+      buff_resp += line + "\n";
+    }
+    delay(10); // Small delay to allow for incoming data to accumulate
+  }
+
+  Serial.println("Response ->: " + buff_resp);
+  return buff_resp;
 }
