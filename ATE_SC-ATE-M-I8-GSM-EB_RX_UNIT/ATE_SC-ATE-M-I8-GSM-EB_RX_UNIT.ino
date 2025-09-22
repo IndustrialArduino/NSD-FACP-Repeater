@@ -479,7 +479,7 @@ void handleSMS(String message) {
       ActivatedBuzzerInput[3] = false;
       faultActive = false;
     }
-    io.digitalWrite(IO_RL2, LOW);
+    if((!TX1_Fire)&&(!TX2_Fire))io.digitalWrite(IO_RL2, LOW);
     io.digitalWrite(IO_RL1, LOW);
     digitalWrite(BUZZER, LOW);
 
@@ -675,7 +675,7 @@ void handleFireAlarm(String payload) {
       ActivatedBuzzerInput[3] = false;
       faultActive = false;
     }
-    io.digitalWrite(IO_RL2, LOW);
+    if((!TX1_Fire)&&(!TX2_Fire))io.digitalWrite(IO_RL2, LOW);
     io.digitalWrite(IO_RL1, LOW);
     digitalWrite(BUZZER, LOW);
 
@@ -842,27 +842,27 @@ void connectToMQTT(void) {
   delay(2000); // Wait for the connection to establish
 
 
-  //String sub1 = "AT+QMTSUB=0,0,\"" + String(mqttConfig.TX1_fireTopic) + "\",0";
-  //gsm_send_serial(sub1, 1000);
-  //delay(1000);
+  String sub1 = "AT+QMTSUB=0,0,\"" + String(mqttConfig.TX1_fireTopic) + "\",0";
+  gsm_send_serial(sub1, 1000);
+  delay(1000);
 
-  //String sub2 = "AT+QMTSUB=0,1,\"" + String(mqttConfig.TX1_faultTopic) + "\",0";
-  //gsm_send_serial(sub2, 1000);
-  //delay(1000);
+  String sub2 = "AT+QMTSUB=0,1,\"" + String(mqttConfig.TX1_faultTopic) + "\",0";
+  gsm_send_serial(sub2, 1000);
+  delay(1000);
 
-  String sub3 = "AT+QMTSUB=0,0,\"" + String(mqttConfig.TX1_aliveTopic) + "\",0";
+  String sub3 = "AT+QMTSUB=0,2,\"" + String(mqttConfig.TX1_aliveTopic) + "\",0";
   gsm_send_serial(sub3, 1000);
   delay(1000);
 
-  //String sub4 = "AT+QMTSUB=0,3,\"" + String(mqttConfig.TX2_fireTopic) + "\",0";
-  //gsm_send_serial(sub4, 1000);
-  //delay(1000);
+  String sub4 = "AT+QMTSUB=0,3,\"" + String(mqttConfig.TX2_fireTopic) + "\",0";
+  gsm_send_serial(sub4, 1000);
+  delay(1000);
 
-  //String sub5 = "AT+QMTSUB=0,4,\"" + String(mqttConfig.TX2_faultTopic) + "\",0";
-  //gsm_send_serial(sub5, 1000);
-  //delay(1000);
+  String sub5 = "AT+QMTSUB=0,4,\"" + String(mqttConfig.TX2_faultTopic) + "\",0";
+  gsm_send_serial(sub5, 1000);
+  delay(1000);
 
-  String sub6 = "AT+QMTSUB=0,1,\"" + String(mqttConfig.TX2_aliveTopic) + "\",0";
+  String sub6 = "AT+QMTSUB=0,5,\"" + String(mqttConfig.TX2_aliveTopic) + "\",0";
   gsm_send_serial(sub6, 1000);
   delay(1000);
 
