@@ -191,7 +191,8 @@ void mqttCallback(char* topic, String payload, unsigned int len) {
   } else if (topicStr.endsWith("/FAULT_ALARM")) {
     SerialMon.println("Received a FAULT ALARM SIGNAL!");
     handleFaultAlarm(payload);
-  } else if (topicStr.endsWith("/TRANSMITTER_ALIVE_STATUS")) {
+  } else if (topicStr.endsWith("/TX1_ALIVE_STATUS")|| 
+             topicStr.endsWith("/TX2_ALIVE_STATUS")) {
     SerialMon.println("Received a TX ALIVE SIGNAL!");
     handleAliveSignal(payload);
   } else {
