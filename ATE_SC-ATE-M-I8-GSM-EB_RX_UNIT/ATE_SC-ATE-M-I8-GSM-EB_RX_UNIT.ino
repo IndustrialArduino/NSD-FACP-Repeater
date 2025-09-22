@@ -146,8 +146,8 @@ bool TX1_Fire = false;
 bool TX2_Fire = false;
 bool TX1_Fault = false;
 bool TX2_Fault = false;
-bool TX1_Alive = true;
-bool TX2_Alive = true;
+bool TX1_Alive = false;
+bool TX2_Alive = false;
 
 int txID = 0; // 0 = unknown, 1 = TX1, 2 = TX2
 
