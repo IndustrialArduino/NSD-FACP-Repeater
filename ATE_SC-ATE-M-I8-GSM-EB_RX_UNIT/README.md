@@ -57,6 +57,7 @@ MQTT: Connect
 - New alarm/fault → buzzer re-activates.
 
 6. **OTA Functionality**
+- Binary file should be named as "RX.bin"
 - SMS command: `"update the RX panel"` triggers OTA update.
 
 ---
