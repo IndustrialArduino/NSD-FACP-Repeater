@@ -22,6 +22,9 @@ String phonecall_phoneNumbers[5] = {
 
 };
 
+// User configurable: how many numbers to send SMS OF REMOTE SUCCESSFULL UPDATE MESSAGE (0-6)
+uint8_t numPhoneNumbers = 1;  // Example: send to first number ONLY
+
 //RX number is Always included in SMS (do not remove)
 String rxSimNumber = "+971501608741";    
 

@@ -155,7 +155,7 @@ unsigned long lastScrollTime = 0;
 const unsigned long scrollDelay = 1000; // 1s per screen
 int scrollIndex = 0; // Which screen is currently displayed
 
-String firmware_url = "https://raw.githubusercontent.com/IndustrialArduino/NSD-FACP-Updates/release/Receiver_Panel.bin";
+String firmware_url = "https://raw.githubusercontent.com/IndustrialArduino/NSD-FACP-Updates/release/RX.bin";
 
 void IRAM_ATTR onD1FallingEdge() {
   unsigned long now = millis();
@@ -185,10 +185,12 @@ void mqttCallback(char* topic, String payload, unsigned int len) {
   }
 
   // Determine which type of alarm it is
-  if (topicStr.endsWith("/FIRE_ALARM")) {
+  if (topicStr.endsWith("/TX1_FIRE_ALARM")||
+      topicStr.endsWith("/TX2_FIRE_ALARM")) {
     SerialMon.println("Received a FIRE ALARM SIGNAL!");
     handleFireAlarm(payload);
-  } else if (topicStr.endsWith("/FAULT_ALARM")) {
+  } else if (topicStr.endsWith("/TX1_FAULT_ALARM") ||
+             topicStr.endsWith("/TX2_FAULT_ALARM") ) {
     SerialMon.println("Received a FAULT ALARM SIGNAL!");
     handleFaultAlarm(payload);
   } else if (topicStr.endsWith("/TX1_ALIVE_STATUS")|| 
@@ -1294,7 +1296,7 @@ void performOTA() {
   if (Update.end()) {
     Serial.println("[OTA] Update successful!");
     if (Update.isFinished()) {
-      sendSMS("FACP-Receiver Panel Updated Successfully", numPhoneNumbers);
+      sendSMS("FACP- RX Updated Successfully", numPhoneNumbers);
       delay(300);
       Serial.println("[OTA] Rebooting...");
       delay(300);

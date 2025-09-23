@@ -103,7 +103,7 @@ bool lastStableState[3] = {HIGH, LOW, LOW};
 bool currentState[3] = {HIGH, LOW, LOW};
 bool processing = false;
 
-String firmware_url = "https://raw.githubusercontent.com/IndustrialArduino/NSD-FACP-Updates/release/Transmitter_Panel.bin";
+String firmware_url = "https://raw.githubusercontent.com/IndustrialArduino/NSD-FACP-Updates/release/TX2.bin";
 
 unsigned long lastAliveSentTime = 0;
 const unsigned long aliveInterval = 900000; // 15 minutes in milliseconds
@@ -372,6 +372,20 @@ void sendSMSForInput(int idx, bool isAlarm, String message) {
         }
       }
     }
+  }
+}
+
+void sendSMS(String message, uint8_t numRecipients) {
+  if (numRecipients > 6) numRecipients = 6; // Safety clamp
+
+  for (int i = 0; i < numRecipients; i++) {
+    gsm_send_serial("AT+CMGF=1", 1000);       // Set SMS text mode
+    gsm_send_serial("AT+CSCS=\"GSM\"", 500);  // Use GSM character set
+
+    String cmd = String("AT+CMGS=\"") + smsRoutingNumbers[i] + "\"";
+    gsm_send_serial(cmd, 1000);
+
+    gsm_send_serial(message + "\x1A", 5000);  // Send message with Ctrl+Z
   }
 }
 
@@ -977,7 +991,7 @@ void performOTA() {
   if (Update.end()) {
     Serial.println("[OTA] Update successful!");
     if (Update.isFinished()) {
-      //sendSMS("FACP-Transmitter Panel Updated Successfully");
+      sendSMS("FACP-TX2 Panel Updated Successfully", numPhoneNumbers);
       delay(300);
       Serial.println("[OTA] Rebooting...");
       delay(300);
