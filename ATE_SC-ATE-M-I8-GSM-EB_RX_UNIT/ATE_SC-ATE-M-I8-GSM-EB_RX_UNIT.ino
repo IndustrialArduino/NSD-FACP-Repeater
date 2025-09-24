@@ -408,11 +408,12 @@ void handleSMSLine(String metaLine) {
 }
 
 void handleSMS(String message) {
+  txID = 0; 
   message.trim();
   message.toLowerCase();
 
   // Special case: OTA update (no TX number)
-  if (message.indexOf("update the RX panel") != -1) {
+  if (message.indexOf("update the rx panel") != -1) {
     Serial.println("[SMS Action] OTA UPDATE");
     performOTA();
     return;

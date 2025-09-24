@@ -418,7 +418,7 @@ void handleSMS(String message) {
   message.trim();
   message.toLowerCase();
 
-  if (message.indexOf("update the TX-1 panel") != -1) {
+  if (message.indexOf("update the tx-1 panel") != -1) {
     Serial.println("[SMS Action] OTA UPDATE");
     performOTA();
   }

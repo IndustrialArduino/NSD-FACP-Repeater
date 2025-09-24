@@ -10,14 +10,14 @@ const char gprsUser[] = "";
 const char gprsPass[] = "";
 
 // Delay settings in minutes (user configurable, 0–30)
-uint8_t inputDelayMinutes_RX = 5;  //RX MAINS FAILS ALARM TRIGGERING DELAY
+uint8_t inputDelayMinutes_RX = 0;  //RX MAINS FAILS ALARM TRIGGERING DELAY
 
 // User configurable: how many numbers to send SMS (0-5)
 uint8_t numPhoneNumbers = 3;  // Example: send to first 3 numbers
 
 //Your phone numbers for SMS
 const char* phoneNumbers[5] = {
-   "+971506168293"
+   "+94769164662"
      
 };
 
