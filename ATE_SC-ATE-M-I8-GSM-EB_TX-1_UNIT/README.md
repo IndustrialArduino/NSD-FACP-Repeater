@@ -67,6 +67,7 @@ MQTT: Connect
     - RX-1 monitors heartbeat loss and reports missing TX nodes
 
 11. **OTA Functionality:**
+    - Binary file should be named as "TX1.bin"
     - Triggered via SMS: `"update the TX-1 panel"`
 
 ---

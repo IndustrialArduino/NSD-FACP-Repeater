@@ -68,6 +68,7 @@ MQTT: Connect
     - RX monitors heartbeat loss and reports missing TX-2 
 
 11. **OTA Functionality:**
+     - Binary file should be named as "TX2.bin"
     - Triggered via SMS: `"update the TX-2 panel"`
 
 ---
