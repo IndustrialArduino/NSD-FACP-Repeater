@@ -417,6 +417,10 @@ void handleSMS(String message) {
     Serial.println("[SMS Action] OTA UPDATE");
     performOTA();
     return;
+  }else if(message.indexOf("reboot") != -1) {
+    Serial.println("[SMS Action] OTA UPDATE");
+    reboot_device();
+    return;
   }
 
   // Identify TX source
@@ -549,6 +553,13 @@ void handleSMS(String message) {
     lastTX2AliveTime = millis();
     TX2_DeadShown = false;
   }
+}
+
+void reboot_device() {
+  Serial.println("[Device] Rebooting now...");
+  sendSMS("FACP-RX Panel Rebooting", numPhoneNumbers);
+  delay(500); // Give time for Serial output to flush
+  ESP.restart(); // ESP32 built-in restart function
 }
 
 void checkTransmitterAlive() {

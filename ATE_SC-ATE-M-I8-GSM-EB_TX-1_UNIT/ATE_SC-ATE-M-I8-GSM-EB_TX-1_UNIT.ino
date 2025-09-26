@@ -421,7 +421,17 @@ void handleSMS(String message) {
   if (message.indexOf("update the tx-1 panel") != -1) {
     Serial.println("[SMS Action] OTA UPDATE");
     performOTA();
+  }else if(message.indexOf("reboot") != -1) {
+    Serial.println("[SMS Action] OTA UPDATE");
+    reboot_device();
   }
+}
+
+void reboot_device() {
+  Serial.println("[Device] Rebooting now...");
+  sendSMS("FACP-TX1 Panel Rebooting", numPhoneNumbers);
+  delay(500); // Give time for Serial output to flush
+  ESP.restart(); // ESP32 built-in restart function
 }
 
 
