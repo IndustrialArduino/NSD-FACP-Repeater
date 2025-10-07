@@ -1,3 +1,7 @@
+// RX , This code is for ESP32S3 Dev Module Board, NEW ATE.
+// Revised and updated on 2nd Oct 2025 by S.K
+// When sending to GITHUB the bin file to be named as RX.bin
+
 #include <Wire.h>
 #include <WiFi.h>
 #include <Ethernet.h>
@@ -141,6 +145,10 @@ String GPRSconnection = "";
 bool Buzzersilence[4] = {false, false, false, false};
 bool ActivatedBuzzerInput[4] = {false, false, false, false};
 
+unsigned long lastAliveSentTime = 0;
+const unsigned long aliveInterval = 900000; // 15 minutes in milliseconds
+bool aliveMessageSentOnce = false;
+
 //IDENTFY TX1 AND TX2 NODES ALARMS SEPERATELY
 bool TX1_Fire = false;
 bool TX2_Fire = false;
@@ -283,6 +291,16 @@ void loop() {
   checkTransmitterAlive();
   isGPRSConnected();
   maintainMQTTConnection();
+
+  unsigned long currentAliveMillis = millis();
+  if (!aliveMessageSentOnce) {
+    sendAliveMessage();
+    lastAliveSentTime = currentAliveMillis;
+    aliveMessageSentOnce = true;
+  } else if (currentAliveMillis - lastAliveSentTime >= aliveInterval) {
+    sendAliveMessage();
+    lastAliveSentTime = currentAliveMillis;
+  }
 
   if (millis() - lastDisplayUpdate > displayInterval) {
     updateLCD16x4();
@@ -560,6 +578,13 @@ void reboot_device() {
   sendSMS("FACP-RX Panel Rebooting", numPhoneNumbers);
   delay(500); // Give time for Serial output to flush
   ESP.restart(); // ESP32 built-in restart function
+}
+
+void sendAliveMessage() {
+  String message = "1";
+  Serial.println("[HEARTBEAT MESAAGE] Sending alive message");
+
+  publishToMQTT(mqttConfig.RX_aliveTopic, message);
 }
 
 void checkTransmitterAlive() {
@@ -896,10 +921,11 @@ void updateLCD16x4() {
     case 0: // --- TX1 status ---
       // Row 0: Date/Time
       char row0[21];  
-      snprintf(row0, sizeof(row0), "%s %02d/%02d %02d:%02d:%02d",
-               nodeName, now.day(), now.month(), now.hour(), now.minute(), now.second());
+      //snprintf(row0, sizeof(row0), "%s %02d/%02d %02d:%02d:%02d",
+      //         nodeName, now.day(), now.month(), now.hour(), now.minute(), now.second());
       lcd.setCursor(0, 0);
-      lcd.print(row0);
+      lcd.print(String("TX-1  ETIHAD-HQ")); 
+      //lcd.print(row0);
 
       lcd.setCursor(0, 1);
       lcd.print(String("TX1 Fire ") + (TX1_Fire ? "- Alarm" : "- Normal"));
@@ -914,10 +940,11 @@ void updateLCD16x4() {
     case 1: // --- TX2 status ---
       // Row 0: Date/Time
 
-      snprintf(row0, sizeof(row0), "%s %02d/%02d %02d:%02d:%02d",
-               nodeName, now.day(), now.month(), now.hour(), now.minute(), now.second());
+      //snprintf(row0, sizeof(row0), "%s %02d/%02d %02d:%02d:%02d",
+      //         nodeName, now.day(), now.month(), now.hour(), now.minute(), now.second());
       lcd.setCursor(0, 0);
-      lcd.print(row0);
+      lcd.print(String("TX-2  ETIHAD-TA"));
+      //lcd.print(row0);
 
       lcd.setCursor(0, 1);
       lcd.print(String("TX2 Fire ") + (TX2_Fire ? "- Alarm" : "- Normal"));
